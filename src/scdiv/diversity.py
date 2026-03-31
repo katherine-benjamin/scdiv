@@ -5,6 +5,41 @@ import numpy.typing as npt
 import scipy.stats
 
 
+def diversity_from_weighted_similarities(
+    weighted_similarities: npt.NDArray,
+    order: float,
+    distribution: npt.NDArray,
+) -> float:
+    """Compute diversity from pre-computed weighted similarities.
+
+    This is the core computation, useful when the weighted similarities
+    (similarity @ distribution) have been computed externally, e.g. via
+    the O(n*d) factored cosine similarity trick.
+
+    Args:
+        weighted_similarities:
+            The vector S @ p, where S is the similarity matrix and p is the
+            distribution. Shape (n,).
+        order:
+            The order of the power mean used to average the diversity.
+        distribution:
+            The relative abundances. Shape (n,).
+
+    Returns:
+        The diversity of the data set.
+
+    """
+    if np.isposinf(order):
+        return 1 / weighted_similarities.max()
+
+    if np.isneginf(order):
+        return 1 / weighted_similarities.min()
+
+    return scipy.stats.pmean(
+        1 / weighted_similarities, 1 - order, weights=distribution
+    )
+
+
 def diversity(
     similarity: npt.NDArray, order: float, distribution: None | npt.NDArray = None
 ) -> float:
@@ -34,14 +69,9 @@ def diversity(
     if distribution is None:
         distribution = np.ones(num_species) / num_species
 
-    if np.isposinf(order):
-        return 1 / (similarity @ distribution).max()
-
-    if np.isneginf(order):
-        return 1 / (similarity @ distribution).min()
-
-    return scipy.stats.pmean(
-        1 / (similarity @ distribution), 1 - order, weights=distribution
+    weighted_similarities = similarity @ distribution
+    return diversity_from_weighted_similarities(
+        weighted_similarities, order, distribution
     )
 
 
