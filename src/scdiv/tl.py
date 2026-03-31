@@ -7,7 +7,7 @@ import numpy.typing as npt
 import pandas as pd
 from anndata import AnnData
 
-from scdiv._similarity import (
+from scdiv.similarity import (
     _l2_normalize_rows,
     cosine_similarity_matrix,
     normalize_columns,
@@ -82,9 +82,25 @@ def _compute_singleton_diversity(x: npt.NDArray, order: float) -> float:
     return diversity_from_weighted_similarities(w_sims, order, distribution)
 
 
-def _get_expression_matrix(adata: AnnData, layer: str | None) -> npt.NDArray:
+def _get_expression_matrix(
+    adata: AnnData,
+    layer: str | None,
+    *,
+    use_highly_variable: bool = True,
+) -> npt.NDArray:
     """Extract expression matrix as a dense numpy array."""
     x = adata.layers[layer] if layer is not None else adata.X
+
+    if use_highly_variable:
+        if "highly_variable" not in adata.var.columns:
+            msg = (
+                "use_highly_variable=True but 'highly_variable' not found "
+                "in adata.var. Run sc.pp.highly_variable_genes first."
+            )
+            raise KeyError(msg)
+        hvg_mask = adata.var["highly_variable"].to_numpy()
+        x = x[:, hvg_mask]
+
     if hasattr(x, "todense"):
         return np.asarray(x.todense())
     return np.asarray(x, dtype=float)
@@ -178,7 +194,7 @@ def _compute_grouped(  # noqa: PLR0913
             group_diversities[g] = div
 
     params: dict = {}
-    if global_sim is not None:
+    if global_cell_types is not None:
         params["similarity"] = global_sim
         params["cell_types"] = list(global_cell_types)
     return group_diversities, params
@@ -191,10 +207,10 @@ def diversity(  # noqa: PLR0913
     cell_type_key: str | None = None,
     groupby: str | None = None,
     layer: str | None = None,
+    use_highly_variable: bool = True,
     per_group_similarity: bool = False,
     key_added: str = "scdiv_diversity",
-    copy: bool = False,
-) -> AnnData | None:
+) -> None:
     """Compute similarity-sensitive diversity on an AnnData object.
 
     Two modes:
@@ -218,26 +234,20 @@ def diversity(  # noqa: PLR0913
             diversity per group.
         layer:
             Key in adata.layers to use. If None, uses adata.X.
+        use_highly_variable:
+            If True, restrict to genes marked as highly variable in
+            adata.var['highly_variable'] (from
+            sc.pp.highly_variable_genes). If False, use all genes.
         per_group_similarity:
             If True and groupby is set, recompute the similarity matrix
             within each group. Only relevant in cell-type mode.
             If False, a global similarity matrix is shared across groups.
         key_added:
             Key for storing results in adata.uns and adata.obs.
-        copy:
-            If True, return a modified copy instead of modifying
-            in place.
-
-    Returns:
-        If copy is True, returns the modified AnnData. Otherwise returns
-        None and modifies adata in place.
 
     """
-    if copy:
-        adata = adata.copy()
-
     _validate_keys(adata, cell_type_key, groupby)
-    x = _get_expression_matrix(adata, layer)
+    x = _get_expression_matrix(adata, layer, use_highly_variable=use_highly_variable)
     labels, mask = _get_labels_and_mask(adata, cell_type_key)
 
     if groupby is None:
@@ -251,7 +261,7 @@ def diversity(  # noqa: PLR0913
                 **params,
             }
     else:
-        groups = adata.obs[groupby]
+        groups = pd.Series(adata.obs[groupby])
         group_divs, params = _compute_grouped(
             x, mask, labels, order, groups,
             per_group_similarity=per_group_similarity,
@@ -267,10 +277,6 @@ def diversity(  # noqa: PLR0913
                 "per_group_similarity": per_group_similarity,
                 **params,
             }
-
-    if copy:
-        return adata
-    return None
 
 
 def _validate_keys(

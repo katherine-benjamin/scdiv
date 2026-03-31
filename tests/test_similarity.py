@@ -5,7 +5,7 @@ import scipy.sparse
 from hypothesis import given
 from hypothesis.extra.numpy import arrays
 
-from scdiv._similarity import (
+from scdiv.similarity import (
     _l2_normalize_rows,
     cosine_similarity_matrix,
     normalize_columns,
