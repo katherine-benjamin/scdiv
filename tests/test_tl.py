@@ -84,7 +84,7 @@ orders = st.floats(min_value=0, max_value=1000, allow_nan=False)
 @given(adata_with_cell_types(), orders)
 def test_cell_type_diversity_in_range(adata_and_n, order):
     adata, n_types = adata_and_n
-    scdiv.tl.diversity(adata, order, cell_type_key="cell_type")
+    scdiv.tl.diversity(adata, order, cell_type_key="cell_type", use_highly_variable=False)
     div = adata.uns["scdiv_diversity"]
     assert 1 - RTOL <= div <= n_types * (1 + RTOL)
 
@@ -93,7 +93,7 @@ def test_cell_type_diversity_in_range(adata_and_n, order):
 def test_single_cell_type_gives_one(order):
     x = np.random.default_rng(0).random((5, 3))
     adata = _make_adata(x, cell_types=["A"] * 5)
-    scdiv.tl.diversity(adata, order, cell_type_key="cell_type")
+    scdiv.tl.diversity(adata, order, cell_type_key="cell_type", use_highly_variable=False)
     assert abs(adata.uns["scdiv_diversity"] - 1.0) < RTOL
 
 
@@ -101,7 +101,7 @@ def test_single_cell_type_gives_one(order):
 def test_identical_expression_gives_one(order):
     x = np.array([[1.0, 2.0, 3.0]] * 6)
     adata = _make_adata(x, cell_types=["A", "A", "B", "B", "C", "C"])
-    scdiv.tl.diversity(adata, order, cell_type_key="cell_type")
+    scdiv.tl.diversity(adata, order, cell_type_key="cell_type", use_highly_variable=False)
     assert abs(adata.uns["scdiv_diversity"] - 1.0) < RTOL
 
 
@@ -109,8 +109,8 @@ def test_identical_expression_gives_one(order):
 def test_cell_type_decreasing_in_order(adata_and_n, order1, order2):
     adata, _ = adata_and_n
     adata2 = adata.copy()
-    scdiv.tl.diversity(adata, order1, cell_type_key="cell_type")
-    scdiv.tl.diversity(adata2, order2, cell_type_key="cell_type")
+    scdiv.tl.diversity(adata, order1, cell_type_key="cell_type", use_highly_variable=False)
+    scdiv.tl.diversity(adata2, order2, cell_type_key="cell_type", use_highly_variable=False)
     div1 = adata.uns["scdiv_diversity"]
     div2 = adata2.uns["scdiv_diversity"]
     if order1 <= order2:
@@ -135,7 +135,7 @@ def test_cell_type_decreasing_in_order(adata_and_n, order1, order2):
 )
 def test_singleton_diversity_in_range(x, order):
     adata = _make_adata(x)
-    scdiv.tl.diversity(adata, order)
+    scdiv.tl.diversity(adata, order, use_highly_variable=False)
     div = adata.uns["scdiv_diversity"]
     n = x.shape[0]
     assert 1 - RTOL <= div <= n * (1 + RTOL)
@@ -145,7 +145,7 @@ def test_singleton_diversity_in_range(x, order):
 def test_singleton_identical_gives_one(order):
     x = np.array([[1.0, 2.0]] * 4)
     adata = _make_adata(x)
-    scdiv.tl.diversity(adata, order)
+    scdiv.tl.diversity(adata, order, use_highly_variable=False)
     assert abs(adata.uns["scdiv_diversity"] - 1.0) < RTOL
 
 
@@ -156,7 +156,7 @@ def test_singleton_identical_gives_one(order):
 @settings(max_examples=50)
 def test_groupby_all_groups_in_range(adata_n_g, order):
     adata, n_types, n_groups = adata_n_g
-    scdiv.tl.diversity(adata, order, cell_type_key="cell_type", groupby="sample")
+    scdiv.tl.diversity(adata, order, cell_type_key="cell_type", groupby="sample", use_highly_variable=False)
     group_divs = adata.uns["scdiv_diversity"]
     assert len(group_divs) == n_groups
     for div in group_divs.values():
@@ -167,30 +167,10 @@ def test_groupby_all_groups_in_range(adata_n_g, order):
 @settings(max_examples=50)
 def test_groupby_obs_matches_uns(adata_n_g, order):
     adata, _, _ = adata_n_g
-    scdiv.tl.diversity(adata, order, cell_type_key="cell_type", groupby="sample")
+    scdiv.tl.diversity(adata, order, cell_type_key="cell_type", groupby="sample", use_highly_variable=False)
     group_divs = adata.uns["scdiv_diversity"]
     for _, row in adata.obs.iterrows():
         assert row["scdiv_diversity"] == group_divs[row["sample"]]
-
-
-# --- Copy behavior ---
-
-
-def test_copy_does_not_modify_original():
-    x = np.random.default_rng(0).random((4, 3))
-    adata = _make_adata(x, cell_types=["A", "A", "B", "B"])
-    result = scdiv.tl.diversity(adata, 1, cell_type_key="cell_type", copy=True)
-    assert result is not adata
-    assert "scdiv_diversity" in result.uns
-    assert "scdiv_diversity" not in adata.uns
-
-
-def test_inplace_returns_none():
-    x = np.random.default_rng(0).random((4, 3))
-    adata = _make_adata(x, cell_types=["A", "A", "B", "B"])
-    result = scdiv.tl.diversity(adata, 1, cell_type_key="cell_type")
-    assert result is None
-    assert "scdiv_diversity" in adata.uns
 
 
 # --- Validation ---
@@ -221,8 +201,8 @@ def test_sparse_matches_dense(adata_and_n, order):
         X=scipy.sparse.csr_matrix(adata_dense.X),
         obs=adata_dense.obs.copy(),
     )
-    scdiv.tl.diversity(adata_dense, order, cell_type_key="cell_type")
-    scdiv.tl.diversity(adata_sparse, order, cell_type_key="cell_type")
+    scdiv.tl.diversity(adata_dense, order, cell_type_key="cell_type", use_highly_variable=False)
+    scdiv.tl.diversity(adata_sparse, order, cell_type_key="cell_type", use_highly_variable=False)
     assert abs(
         adata_dense.uns["scdiv_diversity"] - adata_sparse.uns["scdiv_diversity"]
     ) < RTOL

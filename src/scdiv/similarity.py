@@ -7,7 +7,7 @@ import scipy.sparse
 
 def _to_dense(x: npt.NDArray | scipy.sparse.sparray) -> npt.NDArray:
     if scipy.sparse.issparse(x):
-        return np.asarray(x.todense())
+        return np.asarray(x.todense()) # type: ignore[union-attr]`
     return np.asarray(x, dtype=float)
 
 
