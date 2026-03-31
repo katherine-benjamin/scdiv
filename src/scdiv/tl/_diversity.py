@@ -1,0 +1,287 @@
+"""AnnData integration for similarity-sensitive diversity measures."""
+
+import warnings
+
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+from anndata import AnnData
+
+from scdiv._similarity import (
+    _l2_normalize_rows,
+    cosine_similarity_matrix,
+    normalize_columns,
+    weighted_cosine_similarities,
+)
+from scdiv.diversity import diversity as _core_diversity
+from scdiv.diversity import diversity_from_weighted_similarities
+
+
+def _mean_expression_per_type(
+    x: npt.NDArray, labels: npt.NDArray, cell_types: npt.NDArray
+) -> npt.NDArray:
+    """Compute mean expression vector for each cell type."""
+    means = np.empty((len(cell_types), x.shape[1]))
+    for i, ct in enumerate(cell_types):
+        means[i] = x[labels == ct].mean(axis=0)
+    return means
+
+
+def _build_distribution(
+    labels: npt.NDArray, cell_types: npt.NDArray
+) -> npt.NDArray:
+    """Build a distribution over cell_types from observed labels."""
+    types_present, counts = np.unique(labels, return_counts=True)
+    distribution = np.zeros(len(cell_types))
+    for i, ct in enumerate(cell_types):
+        idx = np.searchsorted(types_present, ct)
+        if idx < len(types_present) and types_present[idx] == ct:
+            distribution[i] = counts[idx]
+    return distribution / distribution.sum()
+
+
+def _compute_cell_type_diversity(
+    x: npt.NDArray,
+    labels: npt.NDArray,
+    order: float,
+    *,
+    similarity: npt.NDArray | None = None,
+    cell_types: npt.NDArray | None = None,
+) -> tuple[float, npt.NDArray, npt.NDArray, npt.NDArray]:
+    """Compute diversity in cell-type mode.
+
+    Returns:
+        (diversity_value, similarity_matrix, cell_types, distribution)
+
+    """
+    if cell_types is None:
+        cell_types = np.unique(labels)
+
+    distribution = _build_distribution(labels, cell_types)
+
+    if similarity is None:
+        x_col_norm = normalize_columns(x)
+        means = _mean_expression_per_type(x_col_norm, labels, cell_types)
+        similarity = cosine_similarity_matrix(means)
+
+    div = _core_diversity(similarity, order, distribution)
+    return div, similarity, cell_types, distribution
+
+
+def _compute_singleton_diversity(x: npt.NDArray, order: float) -> float:
+    """Compute diversity treating each cell as its own type.
+
+    Uses factored O(n*d) computation to avoid materializing the
+    n_cells x n_cells similarity matrix.
+    """
+    x_col_norm = normalize_columns(x)
+    x_norm = _l2_normalize_rows(x_col_norm)
+    n = x_norm.shape[0]
+    distribution = np.ones(n) / n
+    w_sims = weighted_cosine_similarities(x_norm, distribution)
+    return diversity_from_weighted_similarities(w_sims, order, distribution)
+
+
+def _get_expression_matrix(adata: AnnData, layer: str | None) -> npt.NDArray:
+    """Extract expression matrix as a dense numpy array."""
+    x = adata.layers[layer] if layer is not None else adata.X
+    if hasattr(x, "todense"):
+        return np.asarray(x.todense())
+    return np.asarray(x, dtype=float)
+
+
+def _get_labels_and_mask(
+    adata: AnnData, cell_type_key: str | None
+) -> tuple[npt.NDArray | None, npt.NDArray]:
+    """Extract cell type labels and a mask for non-NaN entries."""
+    if cell_type_key is None:
+        return None, np.ones(adata.n_obs, dtype=bool)
+
+    labels = adata.obs[cell_type_key].to_numpy()
+    mask = pd.notna(labels)
+    if not mask.all():
+        n_dropped = (~mask).sum()
+        warnings.warn(
+            f"Dropping {n_dropped} cells with missing "
+            f"{cell_type_key!r} labels.",
+            stacklevel=3,
+        )
+    return labels, mask
+
+
+def _compute_global(
+    x: npt.NDArray,
+    mask: npt.NDArray,
+    labels: npt.NDArray | None,
+    order: float,
+) -> tuple[float, dict]:
+    """Compute a single diversity value across all (masked) cells."""
+    x_masked = x[mask]
+
+    if labels is None:
+        return _compute_singleton_diversity(x_masked, order), {}
+
+    labels_masked = labels[mask]
+    div, sim, cell_types, dist = _compute_cell_type_diversity(
+        x_masked, labels_masked, order
+    )
+    params = {
+        "similarity": sim,
+        "cell_types": list(cell_types),
+        "distribution": dist,
+    }
+    return div, params
+
+
+def _compute_grouped(  # noqa: PLR0913
+    x: npt.NDArray,
+    mask: npt.NDArray,
+    labels: npt.NDArray | None,
+    order: float,
+    groups: pd.Series,
+    *,
+    per_group_similarity: bool,
+) -> tuple[dict, dict]:
+    """Compute diversity per group. Returns (group_divs, params)."""
+    global_sim = None
+    global_cell_types = None
+
+    if labels is not None and not per_group_similarity:
+        x_masked = x[mask]
+        labels_masked = labels[mask]
+        global_cell_types = np.unique(labels_masked)
+        x_col_norm = normalize_columns(x_masked)
+        means = _mean_expression_per_type(
+            x_col_norm, labels_masked, global_cell_types
+        )
+        global_sim = cosine_similarity_matrix(means)
+
+    group_diversities: dict = {}
+    for g in groups.unique():
+        group_mask = (groups == g).to_numpy() & mask
+        x_group = x[group_mask]
+        if x_group.shape[0] == 0:
+            continue
+
+        if labels is None:
+            group_diversities[g] = _compute_singleton_diversity(
+                x_group, order
+            )
+        else:
+            div, *_ = _compute_cell_type_diversity(
+                x_group,
+                labels[group_mask],
+                order,
+                similarity=global_sim,
+                cell_types=global_cell_types,
+            )
+            group_diversities[g] = div
+
+    params: dict = {}
+    if global_sim is not None:
+        params["similarity"] = global_sim
+        params["cell_types"] = list(global_cell_types)
+    return group_diversities, params
+
+
+def diversity(  # noqa: PLR0913
+    adata: AnnData,
+    order: float,
+    *,
+    cell_type_key: str | None = None,
+    groupby: str | None = None,
+    layer: str | None = None,
+    per_group_similarity: bool = False,
+    key_added: str = "scdiv_diversity",
+    copy: bool = False,
+) -> AnnData | None:
+    """Compute similarity-sensitive diversity on an AnnData object.
+
+    Two modes:
+        - Singleton (cell_type_key=None): each cell is its own type with
+          uniform distribution. Uses O(n*d) computation.
+        - Cell type (cell_type_key given): aggregates to cell types.
+          Similarity = cosine similarity of mean expression per type
+          (after per-gene L1 normalization). Distribution = type
+          proportions.
+
+    Args:
+        adata:
+            Annotated data matrix.
+        order:
+            The order of the power mean used to average diversity.
+        cell_type_key:
+            Column in adata.obs containing cell type labels. If None,
+            each cell is treated as its own type.
+        groupby:
+            Column in adata.obs to group by (e.g. 'sample'). Computes
+            diversity per group.
+        layer:
+            Key in adata.layers to use. If None, uses adata.X.
+        per_group_similarity:
+            If True and groupby is set, recompute the similarity matrix
+            within each group. Only relevant in cell-type mode.
+            If False, a global similarity matrix is shared across groups.
+        key_added:
+            Key for storing results in adata.uns and adata.obs.
+        copy:
+            If True, return a modified copy instead of modifying
+            in place.
+
+    Returns:
+        If copy is True, returns the modified AnnData. Otherwise returns
+        None and modifies adata in place.
+
+    """
+    if copy:
+        adata = adata.copy()
+
+    _validate_keys(adata, cell_type_key, groupby)
+    x = _get_expression_matrix(adata, layer)
+    labels, mask = _get_labels_and_mask(adata, cell_type_key)
+
+    if groupby is None:
+        div, params = _compute_global(x, mask, labels, order)
+        adata.uns[key_added] = div
+        if params:
+            adata.uns[f"{key_added}_params"] = {
+                "order": order,
+                "cell_type_key": cell_type_key,
+                "layer": layer,
+                **params,
+            }
+    else:
+        groups = adata.obs[groupby]
+        group_divs, params = _compute_grouped(
+            x, mask, labels, order, groups,
+            per_group_similarity=per_group_similarity,
+        )
+        adata.uns[key_added] = group_divs
+        adata.obs[key_added] = groups.map(group_divs).to_numpy()
+        if cell_type_key is not None:
+            adata.uns[f"{key_added}_params"] = {
+                "order": order,
+                "cell_type_key": cell_type_key,
+                "groupby": groupby,
+                "layer": layer,
+                "per_group_similarity": per_group_similarity,
+                **params,
+            }
+
+    if copy:
+        return adata
+    return None
+
+
+def _validate_keys(
+    adata: AnnData,
+    cell_type_key: str | None,
+    groupby: str | None,
+) -> None:
+    """Raise KeyError if obs columns are missing."""
+    if cell_type_key is not None and cell_type_key not in adata.obs.columns:
+        msg = f"cell_type_key {cell_type_key!r} not found in adata.obs."
+        raise KeyError(msg)
+    if groupby is not None and groupby not in adata.obs.columns:
+        msg = f"groupby key {groupby!r} not found in adata.obs."
+        raise KeyError(msg)
