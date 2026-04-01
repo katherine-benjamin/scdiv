@@ -93,10 +93,6 @@ def diversity_from_counts(
 ) -> float:
     """Compute diversity directly from a count matrix and cell type labels.
 
-    Convenience function that computes the cosine similarity matrix
-    between cell types (after per-gene L1 normalization), derives the
-    distribution from label frequencies, and returns the diversity.
-
     Args:
         x: Expression matrix, shape (n_cells, n_genes). Can be sparse.
         labels: Cell type label for each cell, shape (n_cells,).
@@ -109,8 +105,3 @@ def diversity_from_counts(
     sim, _ = scdiv.similarity.cell_type_similarity(x, labels)
     dist, _ = distribution_from_labels(labels)
     return diversity(sim, order, dist)
-
-
-def distance_to_similarity(distance: npt.NDArray) -> npt.NDArray:
-    """Convert a distance matrix to a similarity matrix."""
-    return np.exp(-distance)

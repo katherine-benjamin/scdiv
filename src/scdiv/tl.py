@@ -14,12 +14,7 @@ import scdiv.similarity
 def _build_distribution_for_types(
     labels: npt.NDArray, cell_types: npt.NDArray
 ) -> npt.NDArray:
-    """Build a distribution over a fixed set of cell types.
-
-    Unlike distribution_from_labels, this allows cell_types to include
-    types not present in labels (they get zero weight). Used for groupby
-    with global similarity, where a group may not contain all types.
-    """
+    """Build a distribution over a fixed set of cell types."""
     types_present, counts = np.unique(labels, return_counts=True)
     distribution = np.zeros(len(cell_types))
     for i, ct in enumerate(cell_types):
@@ -53,6 +48,8 @@ def _compute_cell_type_diversity(
         )
         dist, _ = scdiv.diversity.distribution_from_labels(labels)
     else:
+        if cell_types is None:
+            cell_types = np.unique(labels)
         dist = _build_distribution_for_types(labels, cell_types)
 
     div = scdiv.diversity.diversity(similarity, order, dist)
