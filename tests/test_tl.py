@@ -25,7 +25,9 @@ def _make_adata(x, cell_types=None, samples=None, highly_variable=None):
     return AnnData(
         X=x,
         obs=pd.DataFrame(obs) if obs else None,
-        var=pd.DataFrame(var, index=[f"g{i}" for i in range(x.shape[1])]) if var else None,
+        var=pd.DataFrame(
+            var, index=[f"g{i}" for i in range(x.shape[1])]
+        ) if var else None,
     )
 
 

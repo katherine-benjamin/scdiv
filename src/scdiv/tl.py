@@ -7,48 +7,18 @@ import numpy.typing as npt
 import pandas as pd
 from anndata import AnnData
 
-from scdiv.diversity import diversity as _core_diversity
-from scdiv.diversity import diversity_from_weighted_similarities
-from scdiv.similarity import (
-    _l2_normalize_rows,
-    cosine_similarity_matrix,
-    normalize_columns,
-    weighted_cosine_similarities,
-)
+import scdiv.diversity
+import scdiv.similarity
 
 
-def _mean_expression_per_type(
-    x: npt.NDArray, labels: npt.NDArray, cell_types: npt.NDArray
-) -> npt.NDArray:
-    """Compute mean expression vector for each cell type.
-
-    Args:
-        x: Expression matrix, shape (n_cells, n_genes).
-        labels: Cell type label for each cell, shape (n_cells,).
-        cell_types: Unique cell types to compute means for, shape (n_types,).
-
-    Returns:
-        Mean expression per type, shape (n_types, n_genes).
-
-    """
-    means = np.empty((len(cell_types), x.shape[1]))
-    for i, ct in enumerate(cell_types):
-        means[i] = x[labels == ct].mean(axis=0)
-    return means
-
-
-def _build_distribution(
+def _build_distribution_for_types(
     labels: npt.NDArray, cell_types: npt.NDArray
 ) -> npt.NDArray:
-    """Build a distribution over cell_types from observed labels.
+    """Build a distribution over a fixed set of cell types.
 
-    Args:
-        labels: Cell type label for each cell, shape (n_cells,).
-        cell_types: The full set of cell types, shape (n_types,).
-
-    Returns:
-        Normalized abundance vector, shape (n_types,). Sums to 1.
-
+    Unlike distribution_from_labels, this allows cell_types to include
+    types not present in labels (they get zero weight). Used for groupby
+    with global similarity, where a group may not contain all types.
     """
     types_present, counts = np.unique(labels, return_counts=True)
     distribution = np.zeros(len(cell_types))
@@ -69,22 +39,24 @@ def _compute_cell_type_diversity(
 ) -> tuple[float, npt.NDArray, npt.NDArray, npt.NDArray]:
     """Compute diversity in cell-type mode.
 
+    If similarity and cell_types are provided (global similarity mode),
+    uses them and builds a distribution over the given types. Otherwise
+    computes both from the data.
+
     Returns:
         (diversity_value, similarity_matrix, cell_types, distribution)
 
     """
-    if cell_types is None:
-        cell_types = np.unique(labels)
-
-    distribution = _build_distribution(labels, cell_types)
-
     if similarity is None:
-        x_col_norm = normalize_columns(x)
-        means = _mean_expression_per_type(x_col_norm, labels, cell_types)
-        similarity = cosine_similarity_matrix(means)
+        similarity, cell_types = scdiv.similarity.cell_type_similarity(
+            x, labels
+        )
+        dist, _ = scdiv.diversity.distribution_from_labels(labels)
+    else:
+        dist = _build_distribution_for_types(labels, cell_types)
 
-    div = _core_diversity(similarity, order, distribution)
-    return div, similarity, cell_types, distribution
+    div = scdiv.diversity.diversity(similarity, order, dist)
+    return div, similarity, cell_types, dist
 
 
 def _compute_singleton_diversity(x: npt.NDArray, order: float) -> float:
@@ -93,12 +65,16 @@ def _compute_singleton_diversity(x: npt.NDArray, order: float) -> float:
     Uses factored O(n*d) computation to avoid materialising the
     n_cells x n_cells similarity matrix.
     """
-    x_col_norm = normalize_columns(x)
-    x_norm = _l2_normalize_rows(x_col_norm)
+    x_col_norm = scdiv.similarity.normalize_columns(x)
+    x_norm = scdiv.similarity.l2_normalize_rows(x_col_norm)
     n = x_norm.shape[0]
     distribution = np.ones(n) / n
-    w_sims = weighted_cosine_similarities(x_norm, distribution)
-    return diversity_from_weighted_similarities(w_sims, order, distribution)
+    w_sims = scdiv.similarity.weighted_cosine_similarities(
+        x_norm, distribution
+    )
+    return scdiv.diversity.diversity_from_weighted_similarities(
+        w_sims, order, distribution
+    )
 
 
 def _get_expression_matrix(
@@ -237,12 +213,9 @@ def _compute_grouped(  # noqa: PLR0913
     if labels is not None and not per_group_similarity:
         x_masked = x[mask]
         labels_masked = labels[mask]
-        global_cell_types = np.unique(labels_masked)
-        x_col_norm = normalize_columns(x_masked)
-        means = _mean_expression_per_type(
-            x_col_norm, labels_masked, global_cell_types
+        global_sim, global_cell_types = scdiv.similarity.cell_type_similarity(
+            x_masked, labels_masked
         )
-        global_sim = cosine_similarity_matrix(means)
 
     group_diversities: dict = {}
     for g in groups.unique():

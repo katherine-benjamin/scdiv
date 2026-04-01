@@ -24,7 +24,7 @@ def normalize_columns(x: npt.NDArray | scipy.sparse.sparray) -> npt.NDArray:
     return x / col_sums
 
 
-def _l2_normalize_rows(x: npt.NDArray) -> npt.NDArray:
+def l2_normalize_rows(x: npt.NDArray) -> npt.NDArray:
     """L2-normalize each row. Rows with zero norm are left as zeros."""
     norms = np.linalg.norm(x, axis=1, keepdims=True)
     norms[norms == 0] = 1
@@ -41,7 +41,7 @@ def cosine_similarity_matrix(x: npt.NDArray) -> npt.NDArray:
         Cosine similarity matrix of shape (n, n) with values in [-1, 1].
 
     """
-    x_norm = _l2_normalize_rows(x)
+    x_norm = l2_normalize_rows(x)
     return x_norm @ x_norm.T
 
 
@@ -62,3 +62,49 @@ def weighted_cosine_similarities(
 
     """
     return x_norm @ (x_norm.T @ distribution)
+
+
+def _mean_expression_per_type(
+    x: npt.NDArray, labels: npt.NDArray, cell_types: npt.NDArray
+) -> npt.NDArray:
+    """Compute mean expression vector for each cell type.
+
+    Args:
+        x: Expression matrix, shape (n_cells, n_genes).
+        labels: Cell type label for each cell, shape (n_cells,).
+        cell_types: Unique cell types to compute means for.
+
+    Returns:
+        Mean expression per type, shape (n_types, n_genes).
+
+    """
+    means = np.empty((len(cell_types), x.shape[1]))
+    for i, ct in enumerate(cell_types):
+        means[i] = x[labels == ct].mean(axis=0)
+    return means
+
+
+def cell_type_similarity(
+    x: npt.NDArray | scipy.sparse.sparray,
+    labels: npt.NDArray,
+) -> tuple[npt.NDArray, npt.NDArray]:
+    """Compute cosine similarity matrix between cell types.
+
+    Pipeline: L1-normalize columns (so all genes contribute equally),
+    compute mean expression per type, then cosine similarity between
+    the mean vectors.
+
+    Args:
+        x: Expression matrix, shape (n_cells, n_genes). Can be sparse.
+        labels: Cell type label for each cell, shape (n_cells,).
+
+    Returns:
+        (similarity_matrix, cell_types) where similarity_matrix has
+        shape (n_types, n_types) and cell_types is a sorted array of
+        unique labels.
+
+    """
+    cell_types = np.unique(labels)
+    x_norm = normalize_columns(x)
+    means = _mean_expression_per_type(x_norm, labels, cell_types)
+    return cosine_similarity_matrix(means), cell_types
