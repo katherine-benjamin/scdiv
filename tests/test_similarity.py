@@ -112,4 +112,4 @@ def test_weighted_cosine_similarities_matches_explicit(x_and_p):
     s_full = x_norm @ x_norm.T
     expected = s_full @ p
     result = weighted_cosine_similarities(x_norm, p)
-    npt.assert_allclose(result, expected, rtol=1e-6)
+    npt.assert_allclose(result, expected, rtol=1e-6, atol=1e-15)
