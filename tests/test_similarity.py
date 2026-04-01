@@ -6,8 +6,8 @@ from hypothesis import given
 from hypothesis.extra.numpy import arrays
 
 from scdiv.similarity import (
-    _l2_normalize_rows,
     cosine_similarity_matrix,
+    l2_normalize_rows,
     normalize_columns,
     weighted_cosine_similarities,
 )
@@ -49,8 +49,8 @@ def test_normalize_columns_sparse_matches_dense(x):
 
 
 @given(expression_matrices)
-def test_l2_normalize_rows_unit_norm_or_zero(x):
-    result = _l2_normalize_rows(x)
+def testl2_normalize_rows_unit_norm_or_zero(x):
+    result = l2_normalize_rows(x)
     norms = np.linalg.norm(result, axis=1)
     for norm, orig_norm in zip(norms, np.linalg.norm(x, axis=1), strict=True):
         if orig_norm == 0:
@@ -108,7 +108,7 @@ def matrices_and_distributions(draw):
 @given(matrices_and_distributions())
 def test_weighted_cosine_similarities_matches_explicit(x_and_p):
     x, p = x_and_p
-    x_norm = _l2_normalize_rows(x)
+    x_norm = l2_normalize_rows(x)
     s_full = x_norm @ x_norm.T
     expected = s_full @ p
     result = weighted_cosine_similarities(x_norm, p)

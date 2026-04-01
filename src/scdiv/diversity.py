@@ -4,6 +4,8 @@ import numpy as np
 import numpy.typing as npt
 import scipy.stats
 
+import scdiv.similarity
+
 
 def diversity_from_weighted_similarities(
     weighted_similarities: npt.NDArray,
@@ -67,6 +69,46 @@ def diversity(
     return diversity_from_weighted_similarities(
         weighted_similarities, order, distribution
     )
+
+
+def distribution_from_labels(
+    labels: npt.NDArray,
+) -> tuple[npt.NDArray, npt.NDArray]:
+    """Compute relative abundance of each type from labels.
+
+    Args:
+        labels: Type label for each observation, shape (n,).
+
+    Returns:
+        (distribution, cell_types) where distribution sums to 1 and
+        cell_types is a sorted array of unique labels.
+
+    """
+    cell_types, counts = np.unique(labels, return_counts=True)
+    return counts / counts.sum(), cell_types
+
+
+def diversity_from_counts(
+    x: npt.NDArray, labels: npt.NDArray, order: float
+) -> float:
+    """Compute diversity directly from a count matrix and cell type labels.
+
+    Convenience function that computes the cosine similarity matrix
+    between cell types (after per-gene L1 normalization), derives the
+    distribution from label frequencies, and returns the diversity.
+
+    Args:
+        x: Expression matrix, shape (n_cells, n_genes). Can be sparse.
+        labels: Cell type label for each cell, shape (n_cells,).
+        order: The order of the diversity.
+
+    Returns:
+        The similarity-sensitive diversity.
+
+    """
+    sim, _ = scdiv.similarity.cell_type_similarity(x, labels)
+    dist, _ = distribution_from_labels(labels)
+    return diversity(sim, order, dist)
 
 
 def distance_to_similarity(distance: npt.NDArray) -> npt.NDArray:
