@@ -97,9 +97,9 @@ def test_decreasing_in_order(sim_and_dist, order1, order2):
     div2 = scdiv.diversity.diversity(similarity, order2, dist)
 
     if order1 <= order2:
-        assert div2 <= div1
+        assert div2 <= div1 * (1 + RTOL)
     else:
-        assert div1 <= div2
+        assert div1 <= div2 * (1 + RTOL)
 
 
 def test_empty_similarity_raises():

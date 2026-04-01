@@ -34,10 +34,8 @@ def _l2_normalize_rows(x: npt.NDArray) -> npt.NDArray:
 def cosine_similarity_matrix(x: npt.NDArray) -> npt.NDArray:
     """Compute the cosine similarity matrix from row vectors.
 
-    Intended for small matrices (e.g. one row per cell type).
-
     Args:
-        x: Matrix of shape (n, d) where each row is a vector.
+        x: Matrix of shape (n, d).
 
     Returns:
         Cosine similarity matrix of shape (n, n) with values in [-1, 1].
@@ -52,8 +50,8 @@ def weighted_cosine_similarities(
 ) -> npt.NDArray:
     """Compute S @ p without materializing S, where S is cosine similarity.
 
-    Uses the identity: S @ p = X_norm @ (X_norm.T @ p)
-    where X_norm has L2-normalized rows. This is O(n*d) instead of O(n^2).
+    Uses the identity: S @ p = X_norm @ (X_norm.T @ p) where X_norm has
+    L2-normalized rows.
 
     Args:
         x_norm: L2-row-normalized matrix, shape (n, d).

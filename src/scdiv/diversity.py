@@ -12,10 +12,6 @@ def diversity_from_weighted_similarities(
 ) -> float:
     """Compute diversity from pre-computed weighted similarities.
 
-    This is the core computation, useful when the weighted similarities
-    (similarity @ distribution) have been computed externally, e.g. via
-    the O(n*d) factored cosine similarity trick.
-
     Args:
         weighted_similarities:
             The vector S @ p, where S is the similarity matrix and p is the
@@ -49,15 +45,13 @@ def diversity(
         similarity:
             The similarity matrix of the data set.
         order:
-            The order of the power mean used to average the diversity over all
-            samples.
+            The order of the diversity.
         distribution:
             The relative abundances of each sample. If None then a uniform
-            distribution is assumed. Should be None if the samples are single
-            cells rather than cell clusters.
+            distribution is assumed.
 
     Returns:
-        The diversity of the data set.
+        The similarity-sensitive diversity of the given order.
 
     """
     num_species = len(similarity)
