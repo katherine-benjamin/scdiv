@@ -154,9 +154,9 @@ def _compute_global(
         order: Order of the power mean.
 
     Returns:
-        (diversity_value, params) where params is a dict containing
-        similarity matrix, cell types, and distribution (empty dict
-        in singleton mode).
+        (diversity_value, extras) where extras is a dict of computed
+        quantities (similarity matrix, cell types, distribution) or
+        empty in singleton mode.
 
     """
     x_masked = x[mask]
@@ -168,12 +168,12 @@ def _compute_global(
     div, sim, cell_types, dist = _compute_cell_type_diversity(
         x_masked, labels_masked, order
     )
-    params = {
+    extras = {
         "similarity": sim,
         "cell_types": list(cell_types),
         "distribution": dist,
     }
-    return div, params
+    return div, extras
 
 
 def _compute_grouped(  # noqa: PLR0913
@@ -198,8 +198,8 @@ def _compute_grouped(  # noqa: PLR0913
             each group. If False, use a global similarity matrix.
 
     Returns:
-        (group_divs, params) where group_divs maps group name to
-        diversity value, and params contains the global similarity
+        (group_divs, extras) where group_divs maps group name to
+        diversity value, and extras contains the global similarity
         matrix and cell types if applicable.
 
     """
@@ -234,11 +234,11 @@ def _compute_grouped(  # noqa: PLR0913
             )
             group_diversities[g] = div
 
-    params: dict = {}
+    extras: dict = {}
     if global_cell_types is not None:
-        params["similarity"] = global_sim
-        params["cell_types"] = list(global_cell_types)
-    return group_diversities, params
+        extras["similarity"] = global_sim
+        extras["cell_types"] = list(global_cell_types)
+    return group_diversities, extras
 
 
 def diversity(  # noqa: PLR0913
@@ -258,9 +258,8 @@ def diversity(  # noqa: PLR0913
         - Singleton (cell_type_key=None): each cell is its own type with
           uniform distribution.
         - Cell type (cell_type_key given): aggregates to cell types.
-          Similarity = cosine similarity of mean expression per type
-          (after per-gene L1 normalization). Distribution = type
-          proportions.
+          Similarity = cosine similarity of mean expression per type.
+          Distribution = type proportions.
 
     Args:
         adata:
@@ -290,33 +289,28 @@ def diversity(  # noqa: PLR0913
     x = _get_expression_matrix(adata, layer, use_highly_variable=use_highly_variable)
     labels, mask = _get_labels_and_mask(adata, cell_type_key)
 
+    base_params = {
+        "order": order,
+        "cell_type_key": cell_type_key,
+        "groupby": groupby,
+        "layer": layer,
+        "use_highly_variable": use_highly_variable,
+        "per_group_similarity": per_group_similarity,
+    }
+
     if groupby is None:
-        div, params = _compute_global(x, mask, labels, order)
+        div, extras = _compute_global(x, mask, labels, order)
         adata.uns[key_added] = div
-        if params:
-            adata.uns[f"{key_added}_params"] = {
-                "order": order,
-                "cell_type_key": cell_type_key,
-                "layer": layer,
-                **params,
-            }
+        adata.uns[f"{key_added}_params"] = {**base_params, **extras}
     else:
         groups = pd.Series(adata.obs[groupby])
-        group_divs, params = _compute_grouped(
+        group_divs, extras = _compute_grouped(
             x, mask, labels, order, groups,
             per_group_similarity=per_group_similarity,
         )
         adata.uns[key_added] = group_divs
         adata.obs[key_added] = groups.map(group_divs).to_numpy()
-        if cell_type_key is not None:
-            adata.uns[f"{key_added}_params"] = {
-                "order": order,
-                "cell_type_key": cell_type_key,
-                "groupby": groupby,
-                "layer": layer,
-                "per_group_similarity": per_group_similarity,
-                **params,
-            }
+        adata.uns[f"{key_added}_params"] = {**base_params, **extras}
 
 
 def _validate_keys(
