@@ -62,8 +62,7 @@ def _compute_singleton_diversity(x: npt.NDArray, order: float) -> float:
     Uses factored O(n*d) computation to avoid materialising the
     n_cells x n_cells similarity matrix.
     """
-    x_col_norm = scdiv.similarity.normalize_columns(x)
-    x_norm = scdiv.similarity.l2_normalize_rows(x_col_norm)
+    x_norm = scdiv.similarity.l2_normalize_rows(x)
     n = x_norm.shape[0]
     distribution = np.ones(n) / n
     w_sims = scdiv.similarity.weighted_cosine_similarities(

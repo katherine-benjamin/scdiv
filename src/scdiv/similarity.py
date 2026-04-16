@@ -11,19 +11,6 @@ def _to_dense(x: npt.NDArray | scipy.sparse.sparray) -> npt.NDArray:
     return np.asarray(x, dtype=float)
 
 
-def normalize_columns(x: npt.NDArray | scipy.sparse.sparray) -> npt.NDArray:
-    """L1-normalize each column (gene) of an expression matrix.
-
-    Divides each gene's expression by its total across all cells, so that
-    all genes contribute equally regardless of abundance. Returns a dense
-    array. Columns with zero total are left as zeros.
-    """
-    x = _to_dense(x)
-    col_sums = np.abs(x).sum(axis=0, keepdims=True)
-    col_sums[col_sums == 0] = 1
-    return x / col_sums
-
-
 def l2_normalize_rows(x: npt.NDArray) -> npt.NDArray:
     """L2-normalize each row. Rows with zero norm are left as zeros."""
     norms = np.linalg.norm(x, axis=1, keepdims=True)
@@ -90,9 +77,8 @@ def cell_type_similarity(
 ) -> tuple[npt.NDArray, npt.NDArray]:
     """Compute cosine similarity matrix between cell types.
 
-    Pipeline: L1-normalize columns (so all genes contribute equally),
-    compute mean expression per type, then cosine similarity between
-    the mean vectors.
+    Pipeline: compute mean expression per type, then cosine similarity
+    between the mean vectors.
 
     Args:
         x: Expression matrix, shape (n_cells, n_genes). Can be sparse.
@@ -105,6 +91,6 @@ def cell_type_similarity(
 
     """
     cell_types = np.unique(labels)
-    x_norm = normalize_columns(x)
-    means = _mean_expression_per_type(x_norm, labels, cell_types)
+    x_dense = _to_dense(x)
+    means = _mean_expression_per_type(x_dense, labels, cell_types)
     return cosine_similarity_matrix(means), cell_types
