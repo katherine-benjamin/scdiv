@@ -34,6 +34,9 @@ dev = [
     "seaborn>=0.13.2",
 ]
 
+[tool.uv]
+exclude-newer = "1 week"
+
 [tool.ruff.lint]
 select = ['ALL']
 ignore = ['COM812']
