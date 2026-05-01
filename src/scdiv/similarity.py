@@ -59,16 +59,24 @@ def _mean_expression_per_type(
     Args:
         x: Expression matrix, shape (n_cells, n_genes).
         labels: Cell type label for each cell, shape (n_cells,).
-        cell_types: Unique cell types to compute means for.
+        cell_types: Unique cell types to compute means for. Must be
+            sorted and contain every label (true when
+            ``cell_types = np.unique(labels)``).
 
     Returns:
         Mean expression per type, shape (n_types, n_genes).
 
     """
-    means = np.empty((len(cell_types), x.shape[1]))
-    for i, ct in enumerate(cell_types):
-        means[i] = x[labels == ct].mean(axis=0)
-    return means
+    n_cells = len(labels)
+    n_types = len(cell_types)
+    row_idx = np.searchsorted(cell_types, labels)
+    counts = np.bincount(row_idx, minlength=n_types)
+    weights = 1.0 / counts[row_idx]
+    indicator = scipy.sparse.csr_matrix(
+        (weights, (row_idx, np.arange(n_cells))),
+        shape=(n_types, n_cells),
+    )
+    return indicator @ x
 
 
 def cell_type_similarity(
