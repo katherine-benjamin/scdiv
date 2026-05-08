@@ -99,6 +99,8 @@ def similarity_heatmap(
         _, ax = plt.subplots()
 
     kwargs.setdefault("square", True)
+    kwargs.setdefault("vmin", 0)
+    kwargs.setdefault("vmax", 1)
     sns.heatmap(
         similarity,
         xticklabels=cell_types,
