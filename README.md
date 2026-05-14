@@ -48,8 +48,16 @@ scdiv.tl.diversity(adata, order=1)
 - `layer="raw"` — use a specific layer instead of `adata.X`
 - `use_highly_variable=False` — use all genes (default is `True`, which
   requires `sc.pp.highly_variable_genes` to have been run)
-- `per_group_similarity=True` — recompute the similarity matrix within each
-  group rather than using a global one
+- `mode="alpha_norm"` (default), `"alpha"`, or `"gamma"` — partition
+  diversity mode in the style of Reeve et al. (2016), used with `groupby`.
+  `alpha_norm` is each subcommunity's standalone Leinster–Cobbold
+  diversity; `alpha` is `alpha_norm / w_j` (a "diversity share" that can
+  exceed `n_types`); `gamma` measures each subcommunity's ordinariness
+  against the pooled metacommunity.
+- `aggregate=True` — also store a single metacommunity-level scalar at
+  `adata.uns[f"{key_added}_metacommunity"]` (the `w_j`-weighted power
+  mean of order `1 - order` of the per-group values; for `gamma`, the
+  diversity of the pooled distribution).
 - `key_added="my_key"` — customise the storage key (useful when computing
   diversity at multiple orders)
 

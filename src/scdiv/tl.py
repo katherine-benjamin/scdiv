@@ -9,6 +9,7 @@ from anndata import AnnData
 
 import scdiv.diversity
 import scdiv.similarity
+from scdiv.diversity import _MODES, Mode
 
 
 def _build_distribution_for_types(
@@ -43,9 +44,7 @@ def _compute_cell_type_diversity(
 
     """
     if similarity is None:
-        similarity, cell_types = scdiv.similarity.cell_type_similarity(
-            x, labels
-        )
+        similarity, cell_types = scdiv.similarity.cell_type_similarity(x, labels)
         dist, _ = scdiv.diversity.distribution_from_labels(labels)
     else:
         if cell_types is None:
@@ -65,9 +64,7 @@ def _compute_singleton_diversity(x: npt.NDArray, order: float) -> float:
     x_norm = scdiv.similarity.l2_normalize_rows(x)
     n = x_norm.shape[0]
     distribution = np.ones(n) / n
-    w_sims = scdiv.similarity.weighted_cosine_similarities(
-        x_norm, distribution
-    )
+    w_sims = scdiv.similarity.weighted_cosine_similarities(x_norm, distribution)
     return scdiv.diversity.diversity_from_weighted_similarities(
         w_sims, order, distribution
     )
@@ -100,10 +97,10 @@ def _get_expression_matrix(
             )
             raise KeyError(msg)
         hvg_mask = adata.var["highly_variable"].to_numpy()
-        x = x[:, hvg_mask]  # pyright: ignore[reportOptionalSubscript]
+        x = x[:, hvg_mask]  # ty: ignore[not-subscriptable]
 
     if hasattr(x, "todense"):
-        return np.asarray(x.todense())  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
+        return np.asarray(x.todense())  # ty: ignore[call-non-callable]
     return np.asarray(x, dtype=float)
 
 
@@ -131,8 +128,7 @@ def _get_labels_and_mask(
     if not mask.all():
         n_dropped = (~mask).sum()
         warnings.warn(
-            f"Dropping {n_dropped} cells with missing "
-            f"{cell_type_key!r} labels.",
+            f"Dropping {n_dropped} cells with missing {cell_type_key!r} labels.",
             stacklevel=3,
         )
     return labels, mask
@@ -176,69 +172,68 @@ def _compute_global(
     return div, extras
 
 
-def _compute_grouped(  # noqa: PLR0913
+def _compute_grouped_celltype(  # noqa: PLR0913
     x: npt.NDArray,
     mask: npt.NDArray,
-    labels: npt.NDArray | None,
+    labels: npt.NDArray,
     order: float,
     groups: pd.Series,
     *,
-    per_group_similarity: bool,
-) -> tuple[dict, dict]:
-    """Compute diversity per group.
+    mode: Mode,
+    aggregate: bool,
+) -> tuple[dict, float | None, dict]:
+    """Per-group diversity in cell-type mode via Reeve partition diversity."""
+    x_masked = x[mask]
+    labels_masked = labels[mask]
+    sim, cell_types = scdiv.similarity.cell_type_similarity(x_masked, labels_masked)
+    n_total = int(mask.sum())
 
-    Args:
-        x: Expression matrix, shape (n_cells, n_genes).
-        mask: Boolean array, shape (n_cells,). Cells to include.
-        labels: Cell type labels, shape (n_cells,), or None for
-            singleton mode.
-        order: Order of the power mean.
-        groups: Group assignment for each cell.
-        per_group_similarity: If True, recompute similarity within
-            each group. If False, use a global similarity matrix.
-
-    Returns:
-        (group_divs, extras) where group_divs maps group name to
-        diversity value, and extras contains the global similarity
-        matrix and cell types if applicable.
-
-    """
-    global_sim = None
-    global_cell_types = None
-
-    if labels is not None and not per_group_similarity:
-        x_masked = x[mask]
-        labels_masked = labels[mask]
-        global_sim, global_cell_types = scdiv.similarity.cell_type_similarity(
-            x_masked, labels_masked
-        )
-
-    group_diversities: dict = {}
+    group_keys: list = []
+    cols: list[npt.NDArray] = []
+    weights: list[float] = []
     for g in groups.unique():
         group_mask = (groups == g).to_numpy() & mask
-        x_group = x[group_mask]
-        if x_group.shape[0] == 0:
+        n_group = int(group_mask.sum())
+        if n_group == 0:
             continue
+        group_keys.append(g)
+        cols.append(_build_distribution_for_types(labels[group_mask], cell_types))
+        weights.append(n_group / n_total)
 
-        if labels is None:
-            group_diversities[g] = _compute_singleton_diversity(
-                x_group, order
-            )
-        else:
-            div, *_ = _compute_cell_type_diversity(
-                x_group,
-                labels[group_mask],
-                order,
-                similarity=global_sim,
-                cell_types=global_cell_types,
-            )
-            group_diversities[g] = div
+    distributions = np.column_stack(cols)
+    per_group, meta = scdiv.diversity.partition_diversity(
+        sim,
+        distributions,
+        np.array(weights),
+        order,
+        mode=mode,
+        aggregate=aggregate,
+    )
+    group_diversities = dict(zip(group_keys, per_group, strict=True))
+    extras = {"similarity": sim, "cell_types": list(cell_types)}
+    return group_diversities, meta, extras
 
-    extras: dict = {}
-    if global_cell_types is not None:
-        extras["similarity"] = global_sim
-        extras["cell_types"] = list(global_cell_types)
-    return group_diversities, extras
+
+def _compute_grouped_singleton(
+    x: npt.NDArray,
+    mask: npt.NDArray,
+    order: float,
+    groups: pd.Series,
+    *,
+    mode: Mode,
+    aggregate: bool,
+) -> tuple[dict, float | None]:
+    """Per-group diversity in singleton mode (each cell its own type)."""
+    x_norm = scdiv.similarity.l2_normalize_rows(x[mask])
+    group_keys, group_idx = np.unique(groups[mask].to_numpy(), return_inverse=True)
+    per_group, meta = scdiv.diversity.partition_diversity_singleton(
+        x_norm,
+        group_idx,
+        order,
+        mode=mode,
+        aggregate=aggregate,
+    )
+    return dict(zip(group_keys, per_group, strict=True)), meta
 
 
 def diversity(  # noqa: PLR0913
@@ -249,7 +244,8 @@ def diversity(  # noqa: PLR0913
     groupby: str | None = None,
     layer: str | None = None,
     use_highly_variable: bool = True,
-    per_group_similarity: bool = False,
+    mode: Mode = "alpha_norm",
+    aggregate: bool = False,
     key_added: str = "scdiv_diversity",
 ) -> None:
     """Compute similarity-sensitive diversity on an AnnData object.
@@ -277,14 +273,31 @@ def diversity(  # noqa: PLR0913
         use_highly_variable:
             If True, restrict to genes marked as highly variable in
             adata.var['highly_variable']. If False, use all genes.
-        per_group_similarity:
-            If True and groupby is set, recompute the similarity matrix
-            within each group. Only relevant in cell-type mode.
-            If False, a global similarity matrix is shared across groups.
+        mode:
+            Partition diversity mode in the style of Reeve et al. (2016),
+            relevant when ``groupby`` is set. One of:
+              - ``"alpha_norm"`` (default): standalone diversity of each
+                subcommunity; in [1, n_types].
+              - ``"alpha"``: alpha_norm divided by the subcommunity weight
+                w_j; a "diversity share" that can exceed n_types.
+              - ``"gamma"``: each subcommunity's contribution to the pooled
+                metacommunity diversity (ordinariness against the pool).
+        aggregate:
+            If True and ``groupby`` is set, also store a single
+            metacommunity-level scalar (the w_j-weighted power mean of
+            order ``1 - order`` of the per-group values; for ``gamma``,
+            this equals the diversity of the pooled distribution) at
+            ``adata.uns[f"{key_added}_metacommunity"]``.
         key_added:
             Key for storing results in adata.uns and adata.obs.
 
     """
+    if mode not in _MODES:
+        msg = f"mode must be one of {_MODES}, got {mode!r}."
+        raise ValueError(msg)
+    if groupby is None and aggregate:
+        msg = "aggregate=True requires groupby to be set."
+        raise ValueError(msg)
     _validate_keys(adata, cell_type_key, groupby)
     x = _get_expression_matrix(adata, layer, use_highly_variable=use_highly_variable)
     labels, mask = _get_labels_and_mask(adata, cell_type_key)
@@ -295,22 +308,41 @@ def diversity(  # noqa: PLR0913
         "groupby": groupby,
         "layer": layer,
         "use_highly_variable": use_highly_variable,
-        "per_group_similarity": per_group_similarity,
+        "mode": mode,
     }
 
     if groupby is None:
         div, extras = _compute_global(x, mask, labels, order)
         adata.uns[key_added] = div
         adata.uns[f"{key_added}_params"] = {**base_params, **extras}
-    else:
-        groups = pd.Series(adata.obs[groupby])
-        group_divs, extras = _compute_grouped(
-            x, mask, labels, order, groups,
-            per_group_similarity=per_group_similarity,
+        return
+
+    groups = pd.Series(adata.obs[groupby])
+    if labels is None:
+        group_divs, meta = _compute_grouped_singleton(
+            x,
+            mask,
+            order,
+            groups,
+            mode=mode,
+            aggregate=aggregate,
         )
-        adata.uns[key_added] = group_divs
-        adata.obs[key_added] = groups.map(group_divs).to_numpy()
-        adata.uns[f"{key_added}_params"] = {**base_params, **extras}
+        extras: dict = {}
+    else:
+        group_divs, meta, extras = _compute_grouped_celltype(
+            x,
+            mask,
+            labels,
+            order,
+            groups,
+            mode=mode,
+            aggregate=aggregate,
+        )
+    adata.uns[key_added] = group_divs
+    adata.obs[key_added] = groups.map(group_divs).to_numpy()
+    adata.uns[f"{key_added}_params"] = {**base_params, **extras}
+    if meta is not None:
+        adata.uns[f"{key_added}_metacommunity"] = meta
 
 
 def _validate_keys(

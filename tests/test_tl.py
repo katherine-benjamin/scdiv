@@ -417,21 +417,113 @@ def test_layer_not_same_as_x():
     assert adata.uns["div_x"] != adata.uns["div_layer"]
 
 
-# --- per_group_similarity ---
+# --- Reeve et al. modes (alpha / alpha_norm / gamma) ---
 
 
 @given(adata_with_groups(), orders)
 @settings(max_examples=50)
-def test_per_group_similarity_in_range(adata_n_g, order):
-    """With per-group similarity, each group's diversity is in [1, n_types]."""
+def test_alpha_norm_in_range(adata_n_g, order):
+    """alpha_norm is in [1, n_types] per group."""
     adata, n_types, _ = adata_n_g
     scdiv.tl.diversity(
         adata, order,
         cell_type_key="cell_type", groupby="sample",
-        per_group_similarity=True, use_highly_variable=False,
+        mode="alpha_norm", use_highly_variable=False,
     )
     for div in adata.uns["scdiv_diversity"].values():
         assert 1 - RTOL <= div <= n_types * (1 + RTOL)
+
+
+@given(adata_with_groups(), orders)
+@settings(max_examples=50)
+def test_alpha_equals_alpha_norm_over_weight(adata_n_g, order):
+    """Reeve identity: raw alpha_j = alpha_norm_j / w_j."""
+    adata, _, _ = adata_n_g
+    adata2 = adata.copy()
+    scdiv.tl.diversity(
+        adata, order, cell_type_key="cell_type", groupby="sample",
+        mode="alpha_norm", use_highly_variable=False,
+    )
+    scdiv.tl.diversity(
+        adata2, order, cell_type_key="cell_type", groupby="sample",
+        mode="alpha", use_highly_variable=False,
+    )
+    counts = adata.obs["sample"].value_counts()
+    n_total = counts.sum()
+    for g, alpha_norm in adata.uns["scdiv_diversity"].items():
+        w_j = counts[g] / n_total
+        np.testing.assert_allclose(
+            adata2.uns["scdiv_diversity"][g], alpha_norm / w_j, rtol=RTOL,
+        )
+
+
+@given(adata_with_groups(), orders)
+@settings(max_examples=50)
+def test_gamma_in_range(adata_n_g, order):
+    """gamma per-group values are in [1, n_types]."""
+    adata, n_types, _ = adata_n_g
+    scdiv.tl.diversity(
+        adata, order, cell_type_key="cell_type", groupby="sample",
+        mode="gamma", use_highly_variable=False,
+    )
+    for div in adata.uns["scdiv_diversity"].values():
+        assert 1 - RTOL <= div <= n_types * (1 + RTOL)
+
+
+@given(adata_with_groups(), orders)
+@settings(max_examples=50)
+def test_gamma_aggregate_matches_pooled(adata_n_g, order):
+    """The gamma aggregate equals the diversity of the pooled metacommunity."""
+    adata, _, _ = adata_n_g
+    adata2 = adata.copy()
+    scdiv.tl.diversity(
+        adata, order, cell_type_key="cell_type", groupby="sample",
+        mode="gamma", aggregate=True, use_highly_variable=False,
+    )
+    scdiv.tl.diversity(
+        adata2, order, cell_type_key="cell_type", use_highly_variable=False,
+    )
+    np.testing.assert_allclose(
+        adata.uns["scdiv_diversity_metacommunity"],
+        adata2.uns["scdiv_diversity"],
+        rtol=RTOL,
+    )
+
+
+def test_invalid_mode_raises():
+    adata = _make_adata(
+        np.ones((4, 2)),
+        cell_types=["A", "B", "A", "B"],
+        samples=["s1", "s1", "s2", "s2"],
+    )
+    with pytest.raises(ValueError, match="mode"):
+        scdiv.tl.diversity(
+            adata, 1, cell_type_key="cell_type", groupby="sample",
+            mode="bogus", use_highly_variable=False,
+        )
+
+
+def test_aggregate_requires_groupby():
+    adata = _make_adata(np.ones((4, 2)), cell_types=["A", "B", "A", "B"])
+    with pytest.raises(ValueError, match="groupby"):
+        scdiv.tl.diversity(
+            adata, 1, cell_type_key="cell_type",
+            aggregate=True, use_highly_variable=False,
+        )
+
+
+def test_singleton_grouped_modes_run():
+    """All three modes work in singleton (no cell_type_key) grouped mode."""
+    rng = np.random.default_rng(0)
+    x = rng.random((8, 3))
+    adata = _make_adata(x, samples=["s1"] * 4 + ["s2"] * 4)
+    for mode in ("alpha_norm", "alpha", "gamma"):
+        scdiv.tl.diversity(
+            adata, 1, groupby="sample", mode=mode,
+            aggregate=True, use_highly_variable=False,
+        )
+        assert set(adata.uns["scdiv_diversity"]) == {"s1", "s2"}
+        assert "scdiv_diversity_metacommunity" in adata.uns
 
 
 # --- Groupby edge cases ---

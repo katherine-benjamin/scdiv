@@ -68,7 +68,7 @@ def test_diversity_bar_raises_on_scalar_result():
         cell_type_key="cell_type",
         use_highly_variable=False,
     )
-    with pytest.raises(ValueError, match="grouped result"):
+    with pytest.raises(TypeError, match="grouped result"):
         scdiv.pl.diversity_bar(adata)
 
 
