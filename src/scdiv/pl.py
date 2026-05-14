@@ -40,14 +40,14 @@ def diversity_bar(
             f"{key!r} is a scalar; diversity_bar needs a grouped result "
             "from tl.diversity(..., groupby=...)."
         )
-        raise ValueError(msg)
+        raise TypeError(msg)
 
     params = adata.uns.get(f"{key}_params", {})
 
     if ax is None:
         _, ax = plt.subplots()
 
-    ax.bar([str(k) for k in result], list(result.values()), **kwargs)
+    ax.bar([str(k) for k in result], list(result.values()), **kwargs)  # ty: ignore[invalid-argument-type]
 
     if reference_line:
         ax.axhline(1.0, linestyle="--", color="gray", linewidth=1)
