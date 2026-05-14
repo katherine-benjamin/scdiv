@@ -192,7 +192,7 @@ def test_partition_then_diversity_gamma_aggregate():
     assert "scdiv_diversity_metacommunity" in adata.uns
 
 
-# --- spatial_diversity plot ---
+# --- diversity_heatmap plot ---
 
 
 def _prepared_adata(method="square"):
@@ -214,16 +214,16 @@ def _prepared_adata(method="square"):
     return adata
 
 
-def test_spatial_diversity_returns_axes():
+def test_diversity_heatmap_returns_axes():
     adata = _prepared_adata()
-    ax = scdiv.pl.spatial_diversity(adata)
+    ax = scdiv.pl.diversity_heatmap(adata)
     assert isinstance(ax, Axes)
     plt.close(ax.figure)
 
 
-def test_spatial_diversity_square_has_four_sided_polygons():
+def test_diversity_heatmap_square_has_four_sided_polygons():
     adata = _prepared_adata(method="square")
-    ax = scdiv.pl.spatial_diversity(adata, colorbar=False)
+    ax = scdiv.pl.diversity_heatmap(adata, colorbar=False)
     colls = [c for c in ax.collections if isinstance(c, PolyCollection)]
     assert len(colls) == 1
     n_regions = len(adata.uns["scdiv_diversity"])
@@ -234,20 +234,20 @@ def test_spatial_diversity_square_has_four_sided_polygons():
     plt.close(ax.figure)
 
 
-def test_spatial_diversity_hex_has_six_sided_polygons():
+def test_diversity_heatmap_hex_has_six_sided_polygons():
     adata = _prepared_adata(method="hex")
-    ax = scdiv.pl.spatial_diversity(adata, colorbar=False)
+    ax = scdiv.pl.diversity_heatmap(adata, colorbar=False)
     colls = [c for c in ax.collections if isinstance(c, PolyCollection)]
     paths = colls[0].get_paths()
     assert all(len(p.vertices) == 7 for p in paths)
     plt.close(ax.figure)
 
 
-def test_spatial_diversity_raises_without_params():
+def test_diversity_heatmap_raises_without_params():
     adata = _prepared_adata()
     del adata.uns["spatial_region_params"]
     with pytest.raises(KeyError, match="region metadata"):
-        scdiv.pl.spatial_diversity(adata)
+        scdiv.pl.diversity_heatmap(adata)
 
 
 def test_diversity_wrapper_matches_two_step():
@@ -319,10 +319,10 @@ def test_diversity_wrapper_rejects_groupby_kwarg():
         )
 
 
-def test_spatial_diversity_raises_on_scalar():
+def test_diversity_heatmap_raises_on_scalar():
     rng = np.random.default_rng(0)
     adata = _make_spatial_adata(rng.random((4, 2)), expression=np.ones((4, 2)))
     scdiv.spatial.partition(adata, method="square", region_size=2.0, min_cells=1)
     scdiv.tl.diversity(adata, 1, use_highly_variable=False)
     with pytest.raises(TypeError, match="grouped result"):
-        scdiv.pl.spatial_diversity(adata)
+        scdiv.pl.diversity_heatmap(adata)

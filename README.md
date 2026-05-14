@@ -61,6 +61,26 @@ scdiv.tl.diversity(adata, order=1)
 - `key_added="my_key"` — customise the storage key (useful when computing
   diversity at multiple orders)
 
+### Spatial diversity
+
+For spatial transcriptomics data, tile cells into square or hexagonal
+regions and compute per-region diversity:
+
+```python
+scdiv.spatial.diversity(
+    adata, order=1,
+    partition={"method": "hex", "region_size": 100},
+    cell_type_key="cell_type", mode="alpha",
+)
+
+scdiv.pl.diversity_heatmap(adata)  # polygon map colored by diversity
+```
+
+Spatial coordinates are read from `adata.obsm["spatial"]`. `partition`
+forwards to `scdiv.spatial.partition` (knobs: `method`, `region_size`,
+`min_cells`, `spatial_key`); remaining kwargs forward to
+`scdiv.tl.diversity`.
+
 ## Numpy interface
 
 For users who prefer to work with raw arrays:

@@ -140,7 +140,7 @@ def _region_polygon(
     ]
 
 
-def spatial_diversity(  # noqa: PLR0913
+def diversity_heatmap(  # noqa: PLR0913
     adata: AnnData,
     *,
     key: str = "scdiv_diversity",
@@ -188,7 +188,7 @@ def spatial_diversity(  # noqa: PLR0913
     result = adata.uns[key]
     if not isinstance(result, dict):
         msg = (
-            f"{key!r} is a scalar; spatial_diversity needs a grouped result "
+            f"{key!r} is a scalar; diversity_heatmap needs a grouped result "
             "from tl.diversity(..., groupby=<region key>)."
         )
         raise TypeError(msg)
