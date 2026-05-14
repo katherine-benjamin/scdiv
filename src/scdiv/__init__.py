@@ -3,4 +3,5 @@
 from . import diversity as diversity
 from . import pl as pl
 from . import similarity as similarity
+from . import spatial as spatial
 from . import tl as tl
