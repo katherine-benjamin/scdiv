@@ -73,20 +73,47 @@ def _compute_singleton_diversity(x: npt.NDArray, order: float) -> float:
 def _get_expression_matrix(
     adata: AnnData,
     layer: str | None,
+    obsm: str | None = None,
     *,
     use_highly_variable: bool = True,
 ) -> npt.NDArray:
-    """Extract expression matrix as a dense numpy array.
+    """Extract a per-cell vector representation as a dense numpy array.
+
+    The source is picked from at most one of:
+
+    - ``obsm``: a key in ``adata.obsm`` (``use_highly_variable`` ignored)
+    - ``layer``: a key in ``adata.layers``. Same shape as ``adata.X``;
+    - neither: ``adata.X``.
 
     Args:
         adata: Annotated data matrix.
-        layer: Key in adata.layers, or None to use adata.X.
+        layer: Key in ``adata.layers``, or None.
+        obsm: Key in ``adata.obsm``, or None. Mutually exclusive with
+            ``layer``.
         use_highly_variable: If True, subset to highly variable genes.
+            Ignored when ``obsm`` is set.
 
     Returns:
-        Dense expression matrix, shape (n_cells, n_genes).
+        Dense matrix of shape ``(n_cells, n_features)``.
 
     """
+    if obsm is not None:
+        if obsm not in adata.obsm:
+            msg = f"obsm key {obsm!r} not found in adata.obsm."
+            raise KeyError(msg)
+        x_obsm = np.asarray(adata.obsm[obsm], dtype=float)
+        if (x_obsm < 0).any():
+            warnings.warn(
+                f"adata.obsm[{obsm!r}] contains negative values. "
+                "Similarity-sensitive diversity uses cosine similarity, "
+                "which assumes a non-negative representation; "
+                "mean-centered embeddings (eg. PCA) can break the "
+                "power-mean inside the diversity formula. Pass a "
+                "non-negative representation instead.",
+                stacklevel=3,
+            )
+        return x_obsm
+
     x = adata.layers[layer] if layer is not None else adata.X
 
     if use_highly_variable:
@@ -249,6 +276,7 @@ def diversity(  # noqa: PLR0913
     cell_type_key: str | None = None,
     groupby: str | None = None,
     layer: str | None = None,
+    obsm: str | None = None,
     use_highly_variable: bool = True,
     mode: Mode = "alpha_norm",
     aggregate: bool = False,
@@ -275,10 +303,16 @@ def diversity(  # noqa: PLR0913
             Column in adata.obs to group by (e.g. 'sample'). Computes
             diversity per group.
         layer:
-            Key in adata.layers to use. If None, uses adata.X.
+            Key in adata.layers to use. If None and ``obsm`` is None,
+            uses adata.X. Mutually exclusive with ``obsm``.
+        obsm:
+            Key in adata.obsm holding the per-cell vector representation.
+            Mutually exclusive with ``layer``.
+            When set, ``use_highly_variable`` is ignored.
         use_highly_variable:
             If True, restrict to genes marked as highly variable in
             adata.var['highly_variable']. If False, use all genes.
+            Ignored when ``obsm`` is set.
         mode:
             Partition diversity mode in the style of Reeve et al. (2016),
             relevant when ``groupby`` is set. One of:
@@ -304,8 +338,13 @@ def diversity(  # noqa: PLR0913
     if groupby is None and aggregate:
         msg = "aggregate=True requires groupby to be set."
         raise ValueError(msg)
+    if layer is not None and obsm is not None:
+        msg = "Pass at most one of `layer` and `obsm`."
+        raise TypeError(msg)
     _validate_keys(adata, cell_type_key, groupby)
-    x = _get_expression_matrix(adata, layer, use_highly_variable=use_highly_variable)
+    x = _get_expression_matrix(
+        adata, layer, obsm=obsm, use_highly_variable=use_highly_variable
+    )
     labels, mask = _get_labels_and_mask(adata, cell_type_key)
 
     base_params = {
@@ -313,6 +352,7 @@ def diversity(  # noqa: PLR0913
         "cell_type_key": cell_type_key,
         "groupby": groupby,
         "layer": layer,
+        "obsm": obsm,
         "use_highly_variable": use_highly_variable,
         "mode": mode,
     }

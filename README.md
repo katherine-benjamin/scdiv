@@ -46,8 +46,11 @@ scdiv.tl.diversity(adata, order=1)
 ### Options
 
 - `layer="raw"` — use a specific layer instead of `adata.X`
+- `obsm="X_smoothed"` — use a per-cell vector representation from
+  `adata.obsm` instead of gene-space expression.
 - `use_highly_variable=False` — use all genes (default is `True`, which
-  requires `sc.pp.highly_variable_genes` to have been run)
+  requires `sc.pp.highly_variable_genes` to have been run). Ignored
+  when `obsm` is set.
 - `mode="alpha_norm"` (default), `"alpha"`, or `"gamma"` — partition
   diversity mode in the style of Reeve et al. (2016), used with `groupby`.
   `alpha_norm` is each subcommunity's standalone Leinster–Cobbold

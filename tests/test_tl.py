@@ -417,6 +417,116 @@ def test_layer_not_same_as_x():
     assert adata.uns["div_x"] != adata.uns["div_layer"]
 
 
+def test_obsm_matches_x_when_data_is_same():
+    """obsm path gives the same result as X when the matrix is the same."""
+    rng = np.random.default_rng(0)
+    x = rng.random((6, 3))
+    types = ["A", "A", "B", "B", "C", "C"]
+
+    adata_obsm = _make_adata(x, cell_types=types)
+    adata_obsm.obsm["X_rep"] = x.copy()
+
+    adata_x = _make_adata(x, cell_types=types)
+
+    scdiv.tl.diversity(
+        adata_obsm, 1, cell_type_key="cell_type", obsm="X_rep",
+    )
+    scdiv.tl.diversity(
+        adata_x, 1, cell_type_key="cell_type", use_highly_variable=False,
+    )
+    np.testing.assert_allclose(
+        adata_obsm.uns["scdiv_diversity"], adata_x.uns["scdiv_diversity"],
+        rtol=RTOL,
+    )
+
+
+def test_obsm_with_different_dim():
+    """obsm of shape (n_obs, k != n_vars) is accepted as-is."""
+    rng = np.random.default_rng(0)
+    x = rng.random((6, 4))
+    pcs = rng.random((6, 10))  # n_features != n_vars
+    types = ["A", "A", "B", "B", "C", "C"]
+    adata = _make_adata(x, cell_types=types)
+    adata.obsm["X_pca"] = pcs
+
+    scdiv.tl.diversity(adata, 1, cell_type_key="cell_type", obsm="X_pca")
+    assert "scdiv_diversity" in adata.uns
+
+
+def test_obsm_and_layer_raises():
+    """Passing both layer and obsm is a usage error."""
+    x = np.random.default_rng(0).random((4, 3))
+    adata = _make_adata(x, cell_types=["A", "A", "B", "B"])
+    adata.layers["raw"] = x.copy()
+    adata.obsm["X_rep"] = x.copy()
+    with pytest.raises(TypeError, match="at most one of"):
+        scdiv.tl.diversity(
+            adata, 1, cell_type_key="cell_type", layer="raw", obsm="X_rep",
+        )
+
+
+def test_obsm_missing_key_raises():
+    """Missing obsm key surfaces as KeyError."""
+    x = np.random.default_rng(0).random((4, 3))
+    adata = _make_adata(x, cell_types=["A", "A", "B", "B"])
+    with pytest.raises(KeyError, match="obsm key 'X_pca' not found"):
+        scdiv.tl.diversity(adata, 1, cell_type_key="cell_type", obsm="X_pca")
+
+
+def test_obsm_skips_hvg_check():
+    """With obsm, missing 'highly_variable' should not raise."""
+    rng = np.random.default_rng(0)
+    x = rng.random((6, 3))
+    adata = _make_adata(x, cell_types=["A", "A", "B", "B", "C", "C"])  # no HVG col
+    adata.obsm["X_rep"] = x.copy()
+    # Default use_highly_variable=True normally raises without the column;
+    # with obsm set the flag is ignored.
+    scdiv.tl.diversity(adata, 1, cell_type_key="cell_type", obsm="X_rep")
+    assert "scdiv_diversity" in adata.uns
+
+
+def test_obsm_negative_values_warns():
+    """obsm matrices with negative entries trigger a warning about cosine
+    similarity assumptions."""
+    rng = np.random.default_rng(0)
+    x = rng.random((6, 3))
+    adata = _make_adata(x, cell_types=["A", "A", "B", "B", "C", "C"])
+    # PCA-like rep with negative entries
+    adata.obsm["X_pca"] = rng.standard_normal((6, 4))
+    with pytest.warns(UserWarning, match="non-negative representation"):
+        scdiv.tl.diversity(adata, 1, cell_type_key="cell_type", obsm="X_pca")
+
+
+def test_obsm_nonneg_values_no_warn():
+    """No warning for a strictly non-negative obsm matrix."""
+    rng = np.random.default_rng(0)
+    x = rng.random((6, 3))
+    adata = _make_adata(x, cell_types=["A", "A", "B", "B", "C", "C"])
+    adata.obsm["X_rep"] = rng.random((6, 4))  # all in [0, 1)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        scdiv.tl.diversity(adata, 1, cell_type_key="cell_type", obsm="X_rep")
+
+
+def test_obsm_grouped():
+    """obsm path works with the groupby branch."""
+    rng = np.random.default_rng(1)
+    x = rng.random((8, 4))
+    adata = _make_adata(
+        x,
+        cell_types=["A", "A", "B", "B", "A", "A", "B", "B"],
+        samples=["s1", "s1", "s1", "s1", "s2", "s2", "s2", "s2"],
+    )
+    adata.obsm["X_rep"] = rng.random((8, 5))
+    scdiv.tl.diversity(
+        adata, 1, cell_type_key="cell_type", groupby="sample", obsm="X_rep",
+    )
+    assert isinstance(adata.uns["scdiv_diversity"], dict)
+    assert set(adata.uns["scdiv_diversity"].keys()) == {"s1", "s2"}
+    assert adata.uns["scdiv_diversity_params"]["obsm"] == "X_rep"
+
+
 # --- Reeve et al. modes (alpha / alpha_norm / gamma) ---
 
 
