@@ -322,7 +322,7 @@ def diversity_vs_metric(  # noqa: PLR0913
         msg = f"region_key {region_key!r} not found in adata.obs."
         raise KeyError(msg)
 
-    grouped = adata.obs.groupby(region_key, observed=True)
+    grouped = adata.obs.groupby(region_key, observed=True)  # ty:ignore[unresolved-attribute]
     x_per_region = grouped[x_key].agg(agg)
     df = pd.DataFrame({"x": x_per_region, "y": pd.Series(result)}).dropna()
 

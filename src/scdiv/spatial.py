@@ -333,9 +333,7 @@ def pseudo_cells(  # noqa: PLR0913
     cx = np.bincount(codes, weights=xy[:, 0]) / n_per
     cy = np.bincount(codes, weights=xy[:, 1]) / n_per
 
-    obs = pd.DataFrame(
-        {"n_cells": n_per}, index=pd.Index(cats, name=key_added)
-    )
-    out = AnnData(X=x_mean, obs=obs, var=sub.var.copy())
+    obs = pd.DataFrame({"n_cells": n_per}, index=pd.Index(cats, name=key_added))
+    out = AnnData(X=x_mean, obs=obs, var=sub.var.copy())  # ty:ignore[invalid-argument-type]
     out.obsm[spatial_key] = np.column_stack([cx, cy])
     return out

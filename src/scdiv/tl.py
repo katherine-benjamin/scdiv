@@ -471,7 +471,7 @@ def sparsity(
     else:
         x = adata.X
 
-    n_features = x.shape[1]
+    n_features = x.shape[1]  # ty:ignore[unresolved-attribute]
     if hasattr(x, "getnnz"):
         nnz = np.asarray(x.getnnz(axis=1)).ravel()  # ty: ignore[call-non-callable]
     else:
@@ -482,5 +482,5 @@ def sparsity(
         if region_key not in adata.obs.columns:
             msg = f"region_key {region_key!r} not found in adata.obs."
             raise KeyError(msg)
-        means = adata.obs.groupby(region_key, observed=True)[key_added].mean()
+        means = adata.obs.groupby(region_key, observed=True)[key_added].mean()  # ty:ignore[unresolved-attribute]
         adata.uns[key_added] = means.to_dict()
