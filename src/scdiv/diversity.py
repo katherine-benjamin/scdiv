@@ -205,15 +205,16 @@ def partition_diversity_singleton(
             Order q of the diversity.
         mode:
             One of:
-                - ``"alpha_norm"``: standalone Leinster-Cobbold diversity of
-                  each subcommunity, ``D_q(P^(j); Z P^(j))``.
-                - ``"alpha"``: ``alpha_norm / w_j`` for each subcommunity.
-                - ``"gamma"``: ``D_q(P^(j); Z p_pooled)``, where
-                  ``p_pooled = distributions @ weights``.
+
+            - ``"alpha_norm"``: standalone Leinster-Cobbold diversity of
+              each subcommunity, ``D_q(P^(j); Z P^(j))``.
+            - ``"alpha"``: ``alpha_norm / w_j`` for each subcommunity.
+            - ``"gamma"``: ``D_q(P^(j); Z p_pooled)``, where
+              ``p_pooled = distributions @ weights``.
         aggregate:
             If True, also return the metacommunity-level scalar (the
             ``w_j``-weighted power mean of order ``1 - q`` of the per-group
-             values; for ``gamma`` this equals the diversity of the pooled
+            values; for ``gamma`` this equals the diversity of the pooled
             distribution).
 
     Returns:

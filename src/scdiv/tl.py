@@ -316,12 +316,13 @@ def diversity(  # noqa: PLR0913
         mode:
             Partition diversity mode in the style of Reeve et al. (2016),
             relevant when ``groupby`` is set. One of:
-              - ``"alpha_norm"`` (default): standalone diversity of each
-                subcommunity; in [1, n_types].
-              - ``"alpha"``: alpha_norm divided by the subcommunity weight
-                w_j; a "diversity share" that can exceed n_types.
-              - ``"gamma"``: each subcommunity's contribution to the pooled
-                metacommunity diversity (ordinariness against the pool).
+
+            - ``"alpha_norm"`` (default): standalone diversity of each
+              subcommunity; in [1, n_types].
+            - ``"alpha"``: alpha_norm divided by the subcommunity weight
+              w_j; a "diversity share" that can exceed n_types.
+            - ``"gamma"``: each subcommunity's contribution to the pooled
+              metacommunity diversity (ordinariness against the pool).
         aggregate:
             If True and ``groupby`` is set, also store a single
             metacommunity-level scalar (the w_j-weighted power mean of
