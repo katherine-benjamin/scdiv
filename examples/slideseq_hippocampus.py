@@ -114,7 +114,7 @@ def _(adata, cluster_scatter, plt):
         cluster_scatter(ax, adata, s=1.2)
         ax.set_aspect("equal")
         ax.set_axis_off()
-        ax.set_title("Slide-seqV2 mouse hippocampus — published clusters")
+        ax.set_title("Slide-seqV2 mouse hippocampus: published clusters")
         ax.legend(
             loc="center left", bbox_to_anchor=(1.0, 0.5),
             fontsize=8, frameon=False, markerscale=8,
@@ -138,7 +138,7 @@ def _(mo):
 
 @app.cell
 def _(adata, knn_smooth, scdiv):
-    PSEUDO_CELL_SIZE = 40.0  # μm — circumradius of fine hex bins
+    PSEUDO_CELL_SIZE = 40.0  # circumradius of fine hex bins (μm)
 
     ad_pc = scdiv.spatial.pseudo_cells(
         adata, method="hex", region_size=PSEUDO_CELL_SIZE, min_cells=5,

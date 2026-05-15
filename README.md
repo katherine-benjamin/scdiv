@@ -9,7 +9,7 @@ between cell types. It works with raw numpy arrays or plugs directly into
 ## Installation
 
 ```bash
-pip install git+https://github.com/katherinebenjamin/scdiv.git
+pip install git+https://github.com/katherine-benjamin/scdiv.git
 ```
 
 ## Quick start with scanpy
@@ -45,23 +45,23 @@ scdiv.tl.diversity(adata, order=1)
 
 ### Options
 
-- `layer="raw"` — use a specific layer instead of `adata.X`
-- `obsm="X_smoothed"` — use a per-cell vector representation from
+- `layer="raw"`: use a specific layer instead of `adata.X`
+- `obsm="X_smoothed"`: use a per-cell vector representation from
   `adata.obsm` instead of gene-space expression.
-- `use_highly_variable=False` — use all genes (default is `True`, which
+- `use_highly_variable=False`: use all genes (default is `True`, which
   requires `sc.pp.highly_variable_genes` to have been run). Ignored
   when `obsm` is set.
-- `mode="alpha_norm"` (default), `"alpha"`, or `"gamma"` — partition
+- `mode="alpha_norm"` (default), `"alpha"`, or `"gamma"`: partition
   diversity mode in the style of Reeve et al. (2016), used with `groupby`.
   `alpha_norm` is each subcommunity's standalone Leinster–Cobbold
   diversity; `alpha` is `alpha_norm / w_j` (a "diversity share" that can
   exceed `n_types`); `gamma` measures each subcommunity's ordinariness
   against the pooled metacommunity.
-- `aggregate=True` — also store a single metacommunity-level scalar at
+- `aggregate=True`: also store a single metacommunity-level scalar at
   `adata.uns[f"{key_added}_metacommunity"]` (the `w_j`-weighted power
   mean of order `1 - order` of the per-group values; for `gamma`, the
   diversity of the pooled distribution).
-- `key_added="my_key"` — customise the storage key (useful when computing
+- `key_added="my_key"`: customise the storage key (useful when computing
   diversity at multiple orders)
 
 ### Spatial diversity

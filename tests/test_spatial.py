@@ -269,7 +269,7 @@ def test_partition_then_diversity_gamma_aggregate():
 
 def test_singleton_with_partition_drops_filtered_cells():
     """spatial.partition + singleton tl.diversity should silently drop
-    cells filtered by min_cells — no crash, no warning (the dropping is
+    cells filtered by min_cells: no crash, no warning (the dropping is
     intended via min_cells, not missing user data).
     """
     import warnings as _warnings  # noqa: PLC0415
@@ -507,7 +507,7 @@ def test_pseudo_cells_n_cells_counts_correctly():
 def test_pseudo_cells_min_cells_filter():
     coords = np.array([
         [0.0, 0.0], [0.1, 0.1],   # 2 cells
-        [10.0, 0.0],              # 1 cell — should be dropped at min_cells=2
+        [10.0, 0.0],              # 1 cell (should be dropped at min_cells=2)
     ])
     adata = _make_spatial_adata(coords, expression=np.ones((3, 2)))
     out = scdiv.spatial.pseudo_cells(adata, method="square", region_size=1.0, min_cells=2)

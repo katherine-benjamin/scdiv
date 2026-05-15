@@ -433,7 +433,7 @@ def sparsity(
 
     Writes the per-cell zero fraction to ``adata.obs[key_added]``. When
     ``region_key`` is set, also writes the per-region mean to
-    ``adata.uns[key_added]`` as ``{region: float}`` — directly
+    ``adata.uns[key_added]`` as ``{region: float}``; this is directly
     consumable by :func:`scdiv.pl.diversity_heatmap` (after running
     :func:`scdiv.spatial.partition`) and :func:`scdiv.pl.diversity_vs_metric`.
 

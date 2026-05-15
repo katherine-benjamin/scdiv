@@ -28,6 +28,7 @@ source_suffix = {
     ".rst": "restructuredtext",
 }
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+default_role = "any"
 
 myst_enable_extensions = [
     "colon_fence",
@@ -60,7 +61,7 @@ html_theme = "sphinx_book_theme"
 html_title = "scdiv"
 html_static_path = ["_static"]
 html_theme_options = {
-    "repository_url": "https://github.com/katherinebenjamin/scdiv",
+    "repository_url": "https://github.com/katherine-benjamin/scdiv",
     "repository_branch": "main",
     "path_to_docs": "docs",
     "use_repository_button": True,
