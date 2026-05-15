@@ -453,3 +453,101 @@ def test_diversity_heatmap_raises_on_scalar():
     scdiv.tl.diversity(adata, 1, use_highly_variable=False)
     with pytest.raises(TypeError, match="grouped result"):
         scdiv.pl.diversity_heatmap(adata)
+
+
+# --- pseudo_cells ---
+
+
+def test_pseudo_cells_basic_grouping():
+    """Four cells forming two well-separated pairs collapse to 2 pseudo-cells."""
+    coords = np.array([
+        [0.0, 0.0], [0.1, 0.1],   # pair 1
+        [10.0, 10.0], [10.1, 10.1],  # pair 2
+    ])
+    expr = np.array([
+        [1.0, 0.0],
+        [3.0, 0.0],
+        [0.0, 10.0],
+        [0.0, 20.0],
+    ])
+    adata = _make_spatial_adata(coords, expression=expr)
+    out = scdiv.spatial.pseudo_cells(adata, method="square", region_size=1.0, min_cells=1)
+    assert out.n_obs == 2
+    assert out.n_vars == 2
+    rows = {tuple(row) for row in out.X}
+    assert (2.0, 0.0) in rows  # mean of (1, 0) and (3, 0)
+    assert (0.0, 15.0) in rows  # mean of (0, 10) and (0, 20)
+
+
+def test_pseudo_cells_centroids_match_means_of_input_coords():
+    coords = np.array([
+        [0.0, 0.0], [0.5, 0.5],
+        [10.0, 0.0], [10.0, 0.5],
+    ])
+    expr = np.ones((4, 2))
+    adata = _make_spatial_adata(coords, expression=expr)
+    out = scdiv.spatial.pseudo_cells(adata, method="square", region_size=1.0, min_cells=1)
+    centroids = {tuple(row) for row in out.obsm["spatial"]}
+    assert (0.25, 0.25) in centroids
+    assert (10.0, 0.25) in centroids
+
+
+def test_pseudo_cells_n_cells_counts_correctly():
+    coords = np.array([
+        [0.0, 0.0], [0.1, 0.1], [0.2, 0.2],  # 3 cells in one tile
+        [10.0, 0.0],                          # 1 cell in another
+    ])
+    adata = _make_spatial_adata(coords, expression=np.ones((4, 2)))
+    out = scdiv.spatial.pseudo_cells(adata, method="square", region_size=1.0, min_cells=1)
+    np.testing.assert_array_equal(
+        np.sort(out.obs["n_cells"].to_numpy()), [1, 3]
+    )
+
+
+def test_pseudo_cells_min_cells_filter():
+    coords = np.array([
+        [0.0, 0.0], [0.1, 0.1],   # 2 cells
+        [10.0, 0.0],              # 1 cell — should be dropped at min_cells=2
+    ])
+    adata = _make_spatial_adata(coords, expression=np.ones((3, 2)))
+    out = scdiv.spatial.pseudo_cells(adata, method="square", region_size=1.0, min_cells=2)
+    assert out.n_obs == 1
+    assert int(out.obs["n_cells"].iloc[0]) == 2
+
+
+def test_pseudo_cells_writes_label_back_to_input():
+    coords = np.array([[0.0, 0.0], [0.1, 0.1], [10.0, 0.0]])
+    adata = _make_spatial_adata(coords, expression=np.ones((3, 2)))
+    scdiv.spatial.pseudo_cells(adata, method="square", region_size=1.0, min_cells=1)
+    assert "pseudo_cell" in adata.obs.columns
+    assert adata.obs["pseudo_cell"].notna().sum() == 3
+
+
+def test_pseudo_cells_sparse_input_ok():
+    import scipy.sparse  # noqa: PLC0415
+    coords = np.array([[0.0, 0.0], [0.1, 0.1], [10.0, 0.0], [10.1, 0.1]])
+    x_dense = np.array([
+        [1.0, 0.0, 2.0],
+        [3.0, 0.0, 0.0],
+        [0.0, 5.0, 1.0],
+        [0.0, 7.0, 3.0],
+    ])
+    adata = AnnData(X=scipy.sparse.csr_matrix(x_dense))
+    adata.obsm["spatial"] = coords
+    out = scdiv.spatial.pseudo_cells(adata, method="square", region_size=1.0, min_cells=1)
+    assert scipy.sparse.issparse(out.X)
+    rows = {tuple(row) for row in out.X.toarray()}
+    assert (2.0, 0.0, 1.0) in rows
+    assert (0.0, 6.0, 2.0) in rows
+
+
+def test_pseudo_cells_layer_path():
+    coords = np.array([[0.0, 0.0], [0.1, 0.1], [10.0, 0.0]])
+    adata = _make_spatial_adata(coords, expression=np.ones((3, 2)))
+    adata.layers["alt"] = np.array([[5.0, 5.0], [7.0, 7.0], [3.0, 3.0]])
+    out = scdiv.spatial.pseudo_cells(
+        adata, method="square", region_size=1.0, min_cells=1, layer="alt",
+    )
+    rows = {tuple(row) for row in out.X}
+    assert (6.0, 6.0) in rows  # mean of (5,5) and (7,7)
+    assert (3.0, 3.0) in rows

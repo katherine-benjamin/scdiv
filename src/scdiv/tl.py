@@ -418,3 +418,69 @@ def _validate_keys(
     if groupby is not None and groupby not in adata.obs.columns:
         msg = f"groupby key {groupby!r} not found in adata.obs."
         raise KeyError(msg)
+
+
+def sparsity(
+    adata: AnnData,
+    *,
+    layer: str | None = None,
+    obsm: str | None = None,
+    region_key: str | None = None,
+    key_added: str = "sparsity",
+) -> None:
+    """Per-cell fraction of zero entries.
+
+    Writes the per-cell zero fraction to ``adata.obs[key_added]``. When
+    ``region_key`` is set, also writes the per-region mean to
+    ``adata.uns[key_added]`` as ``{region: float}`` — directly
+    consumable by :func:`scdiv.pl.diversity_heatmap` (after running
+    :func:`scdiv.spatial.partition`) and :func:`scdiv.pl.diversity_vs_metric`.
+
+    Args:
+        adata:
+            Annotated data matrix.
+        layer:
+            Key in ``adata.layers`` to score. If None and ``obsm`` is
+            None, uses ``adata.X``. Mutually exclusive with ``obsm``.
+        obsm:
+            Key in ``adata.obsm`` to score (any per-cell matrix).
+            Mutually exclusive with ``layer``.
+        region_key:
+            Column in ``adata.obs`` holding region labels. When set,
+            the per-region mean is written to ``adata.uns[key_added]``.
+        key_added:
+            Key for storing the per-cell value in ``adata.obs`` and
+            (if ``region_key`` is set) the per-region mean in
+            ``adata.uns``.
+
+    """
+    if layer is not None and obsm is not None:
+        msg = "Pass at most one of `layer` and `obsm`."
+        raise TypeError(msg)
+
+    if obsm is not None:
+        if obsm not in adata.obsm:
+            msg = f"obsm key {obsm!r} not found in adata.obsm."
+            raise KeyError(msg)
+        x = adata.obsm[obsm]
+    elif layer is not None:
+        if layer not in adata.layers:
+            msg = f"layer key {layer!r} not found in adata.layers."
+            raise KeyError(msg)
+        x = adata.layers[layer]
+    else:
+        x = adata.X
+
+    n_features = x.shape[1]
+    if hasattr(x, "getnnz"):
+        nnz = np.asarray(x.getnnz(axis=1)).ravel()  # ty: ignore[call-non-callable]
+    else:
+        nnz = (np.asarray(x) != 0).sum(axis=1)
+    adata.obs[key_added] = 1.0 - nnz / n_features
+
+    if region_key is not None:
+        if region_key not in adata.obs.columns:
+            msg = f"region_key {region_key!r} not found in adata.obs."
+            raise KeyError(msg)
+        means = adata.obs.groupby(region_key, observed=True)[key_added].mean()
+        adata.uns[key_added] = means.to_dict()

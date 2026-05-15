@@ -7,6 +7,7 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import scipy.sparse
 import scipy.spatial
 from anndata import AnnData
 
@@ -256,3 +257,85 @@ def diversity(
     partition(adata, **partition_kwargs)
     kwargs["groupby"] = partition_kwargs.get("key_added", "spatial_region")
     scdiv.tl.diversity(adata, order, **kwargs)  # ty: ignore[invalid-argument-type]
+
+
+def pseudo_cells(  # noqa: PLR0913
+    adata: AnnData,
+    *,
+    method: Method = "hex",
+    region_size: float,
+    min_cells: int = 5,
+    spatial_key: str = "spatial",
+    layer: str | None = None,
+    key_added: str = "pseudo_cell",
+) -> AnnData:
+    """Aggregate cells into pseudo-cells via a fine spatial partition.
+
+    Bins cells into small hex or square tiles and returns a new AnnData
+    with one row per tile. Each pseudo-cell's expression vector is the
+    mean of its input cells' expression.
+
+    Args:
+        adata:
+            Input AnnData with spatial coordinates in
+            ``obsm[spatial_key]``.
+        method:
+            ``"hex"`` (``region_size`` is the circumradius) or
+            ``"square"`` (``region_size`` is the side length).
+        region_size:
+            Tile size for the fine partition.
+        min_cells:
+            Drop pseudo-cells with fewer than this many input cells.
+        spatial_key:
+            Key in ``adata.obsm`` holding the (x, y) coordinates.
+        layer:
+            Key in ``adata.layers`` to aggregate. ``None`` uses
+            ``adata.X``.
+        key_added:
+            Column written to ``adata.obs`` holding the pseudo-cell
+            label per input cell, plus the index name of the returned
+            ``obs``.
+
+    Returns:
+        New AnnData with shape ``(n_pseudo_cells, adata.n_vars)``:
+
+        - ``X`` is the mean of input ``X`` (or ``layer``) per group.
+        - ``obs["n_cells"]`` counts input cells per pseudo-cell.
+        - ``obsm[spatial_key]`` holds pseudo-cell centroids.
+        - ``var`` is the input ``var`` carried through.
+
+    """
+    partition(
+        adata,
+        method=method,
+        region_size=region_size,
+        min_cells=min_cells,
+        min_density=0.0,
+        spatial_key=spatial_key,
+        key_added=key_added,
+    )
+    sub = adata[~adata.obs[key_added].isna()]
+    cats = sub.obs[key_added].cat.categories
+    codes = sub.obs[key_added].cat.codes.to_numpy()
+    n_per = np.bincount(codes, minlength=len(cats))
+
+    # Row-normalized indicator: a single matmul yields per-tile means.
+    indicator = scipy.sparse.csr_matrix(
+        (1.0 / n_per[codes], (codes, np.arange(sub.n_obs))),
+        shape=(len(cats), sub.n_obs),
+    )
+    src = sub.layers[layer] if layer is not None else sub.X
+    x_mean = indicator @ (src if scipy.sparse.issparse(src) else np.asarray(src))
+    if scipy.sparse.issparse(x_mean):
+        x_mean = x_mean.tocsr()
+
+    xy = np.asarray(sub.obsm[spatial_key])[:, :2]
+    cx = np.bincount(codes, weights=xy[:, 0]) / n_per
+    cy = np.bincount(codes, weights=xy[:, 1]) / n_per
+
+    obs = pd.DataFrame(
+        {"n_cells": n_per}, index=pd.Index(cats, name=key_added)
+    )
+    out = AnnData(X=x_mean, obs=obs, var=sub.var.copy())
+    out.obsm[spatial_key] = np.column_stack([cx, cy])
+    return out

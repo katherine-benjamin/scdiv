@@ -734,3 +734,122 @@ def test_nan_groupby_dropped_celltype():
             adata_clean.uns["scdiv_diversity"][key],
             rtol=RTOL,
         )
+
+
+# --- sparsity ---
+
+
+def test_sparsity_per_cell_correct():
+    """Per-cell zero fraction matches a hand-computed expectation."""
+    x = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # 3/4 = 0.75
+            [1.0, 2.0, 0.0, 0.0],  # 2/4 = 0.50
+            [1.0, 2.0, 3.0, 4.0],  # 0/4 = 0.00
+        ]
+    )
+    adata = AnnData(X=x)
+    scdiv.tl.sparsity(adata)
+    np.testing.assert_allclose(
+        adata.obs["sparsity"].to_numpy(), [0.75, 0.50, 0.0]
+    )
+
+
+def test_sparsity_sparse_matrix_path():
+    """Sparse CSR input uses the .getnnz fast path with the same result."""
+    import scipy.sparse as sp
+    x_dense = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 2.0, 3.0]])
+    adata = AnnData(X=sp.csr_matrix(x_dense))
+    scdiv.tl.sparsity(adata)
+    np.testing.assert_allclose(
+        adata.obs["sparsity"].to_numpy(), [2 / 3, 1.0, 0.0]
+    )
+
+
+def test_sparsity_layer_path():
+    """layer= selects an alternative gene-space matrix."""
+    rng = np.random.default_rng(0)
+    x = rng.random((5, 4))
+    adata = AnnData(X=x)
+    adata.layers["zeros_only"] = np.zeros((5, 4))
+    scdiv.tl.sparsity(adata, layer="zeros_only", key_added="zf")
+    np.testing.assert_allclose(adata.obs["zf"].to_numpy(), [1.0] * 5)
+
+
+def test_sparsity_obsm_path():
+    """obsm= scores any per-cell matrix; second dim need not match n_vars."""
+    rng = np.random.default_rng(0)
+    x = rng.random((5, 4))
+    adata = AnnData(X=x)
+    adata.obsm["latent"] = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]
+    )
+    scdiv.tl.sparsity(adata, obsm="latent")
+    np.testing.assert_allclose(
+        adata.obs["sparsity"].to_numpy(), [2 / 3, 1.0, 0.0, 1 / 3, 2 / 3]
+    )
+
+
+def test_sparsity_layer_and_obsm_raises():
+    x = np.random.default_rng(0).random((4, 3))
+    adata = AnnData(X=x)
+    adata.layers["raw"] = x.copy()
+    adata.obsm["latent"] = x.copy()
+    with pytest.raises(TypeError, match="at most one of"):
+        scdiv.tl.sparsity(adata, layer="raw", obsm="latent")
+
+
+def test_sparsity_missing_layer_raises():
+    x = np.random.default_rng(0).random((4, 3))
+    adata = AnnData(X=x)
+    with pytest.raises(KeyError, match="layer key 'absent'"):
+        scdiv.tl.sparsity(adata, layer="absent")
+
+
+def test_sparsity_missing_obsm_raises():
+    x = np.random.default_rng(0).random((4, 3))
+    adata = AnnData(X=x)
+    with pytest.raises(KeyError, match="obsm key 'absent'"):
+        scdiv.tl.sparsity(adata, obsm="absent")
+
+
+def test_sparsity_region_aggregate():
+    """region_key triggers per-region mean in uns."""
+    x = np.array(
+        [
+            [1.0, 0.0, 0.0],  # 2/3
+            [1.0, 1.0, 0.0],  # 1/3
+            [1.0, 1.0, 1.0],  # 0
+            [0.0, 0.0, 0.0],  # 1
+        ]
+    )
+    adata = AnnData(
+        X=x,
+        obs=pd.DataFrame(
+            {"region": pd.Categorical(["A", "A", "B", "B"])}
+        ),
+    )
+    scdiv.tl.sparsity(adata, region_key="region")
+    assert adata.uns["sparsity"]["A"] == pytest.approx(0.5)  # mean(2/3, 1/3)
+    assert adata.uns["sparsity"]["B"] == pytest.approx(0.5)  # mean(0, 1)
+
+
+def test_sparsity_missing_region_key_raises():
+    x = np.random.default_rng(0).random((4, 3))
+    adata = AnnData(X=x)
+    with pytest.raises(KeyError, match="region_key 'no_col'"):
+        scdiv.tl.sparsity(adata, region_key="no_col")
+
+
+def test_sparsity_no_region_key_skips_uns():
+    x = np.random.default_rng(0).random((4, 3))
+    adata = AnnData(X=x)
+    scdiv.tl.sparsity(adata)
+    assert "sparsity" in adata.obs.columns
+    assert "sparsity" not in adata.uns

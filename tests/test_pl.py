@@ -197,3 +197,100 @@ def test_similarity_heatmap_kwargs_override_default():
     ax = scdiv.pl.similarity_heatmap(adata, square=False)
     assert ax.get_aspect() != 1.0
     plt.close(ax.figure)
+
+
+# --- diversity_vs_metric ---
+
+
+def _make_grouped_adata_with_metric():
+    """AnnData with a grouped diversity result plus a per-cell metric."""
+    rng = np.random.default_rng(7)
+    x = rng.random((12, 3))
+    obs = pd.DataFrame(
+        {
+            "cell_type": ["A", "B"] * 6,
+            "spatial_region": ["r1"] * 4 + ["r2"] * 4 + ["r3"] * 4,
+            "depth": np.linspace(100, 1200, 12),
+        }
+    )
+    adata = AnnData(X=x, obs=obs)
+    scdiv.tl.diversity(
+        adata, 1,
+        cell_type_key="cell_type", groupby="spatial_region",
+        use_highly_variable=False,
+    )
+    return adata
+
+
+def test_diversity_vs_metric_returns_axes():
+    adata = _make_grouped_adata_with_metric()
+    ax = scdiv.pl.diversity_vs_metric(adata, x_key="depth")
+    assert isinstance(ax, Axes)
+    plt.close(ax.figure)
+
+
+def test_diversity_vs_metric_one_point_per_region():
+    adata = _make_grouped_adata_with_metric()
+    ax = scdiv.pl.diversity_vs_metric(adata, x_key="depth")
+    # The scatter has one collection; its offsets give the points.
+    offsets = ax.collections[0].get_offsets()
+    assert offsets.shape[0] == 3
+    plt.close(ax.figure)
+
+
+def test_diversity_vs_metric_title_includes_pearson_r():
+    adata = _make_grouped_adata_with_metric()
+    ax = scdiv.pl.diversity_vs_metric(adata, x_key="depth")
+    assert "Pearson r" in ax.get_title()
+    plt.close(ax.figure)
+
+
+def test_diversity_vs_metric_raises_on_scalar_result():
+    rng = np.random.default_rng(0)
+    x = rng.random((6, 3))
+    adata = AnnData(
+        X=x,
+        obs=pd.DataFrame(
+            {
+                "cell_type": ["A", "A", "B", "B", "C", "C"],
+                "spatial_region": ["r1"] * 6,
+                "depth": np.arange(6, dtype=float),
+            }
+        ),
+    )
+    scdiv.tl.diversity(
+        adata, 1, cell_type_key="cell_type", use_highly_variable=False,
+    )
+    with pytest.raises(TypeError, match="grouped result"):
+        scdiv.pl.diversity_vs_metric(adata, x_key="depth")
+
+
+def test_diversity_vs_metric_missing_x_key_raises():
+    adata = _make_grouped_adata_with_metric()
+    with pytest.raises(KeyError, match="x_key 'not_a_col'"):
+        scdiv.pl.diversity_vs_metric(adata, x_key="not_a_col")
+
+
+def test_diversity_vs_metric_missing_region_key_raises():
+    adata = _make_grouped_adata_with_metric()
+    with pytest.raises(KeyError, match="region_key 'no_such_col'"):
+        scdiv.pl.diversity_vs_metric(adata, x_key="depth", region_key="no_such_col")
+
+
+def test_diversity_vs_metric_accepts_user_ax():
+    adata = _make_grouped_adata_with_metric()
+    fig, user_ax = plt.subplots()
+    returned = scdiv.pl.diversity_vs_metric(adata, x_key="depth", ax=user_ax)
+    assert returned is user_ax
+    plt.close(fig)
+
+
+def test_diversity_vs_metric_custom_agg_and_labels():
+    adata = _make_grouped_adata_with_metric()
+    ax = scdiv.pl.diversity_vs_metric(
+        adata, x_key="depth", agg="median",
+        x_label="Median depth", y_label="div",
+    )
+    assert ax.get_xlabel() == "Median depth"
+    assert ax.get_ylabel() == "div"
+    plt.close(ax.figure)
