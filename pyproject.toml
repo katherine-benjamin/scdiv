@@ -31,6 +31,7 @@ dev = [
     "pooch>=1.9.0",
     "pytest>=9.0.2",
     "ruff>=0.15.8",
+    "scipy-stubs>=1.15.3.0",
     "seaborn>=0.13.2",
 ]
 

@@ -69,17 +69,17 @@ regions and compute per-region diversity:
 ```python
 scdiv.spatial.diversity(
     adata, order=1,
-    partition={"method": "hex", "region_size": 100},
+    partition_kwargs={"method": "hex", "region_size": 100},
     cell_type_key="cell_type", mode="alpha",
 )
 
 scdiv.pl.diversity_heatmap(adata)  # polygon map colored by diversity
 ```
 
-Spatial coordinates are read from `adata.obsm["spatial"]`. `partition`
-forwards to `scdiv.spatial.partition` (knobs: `method`, `region_size`,
-`min_cells`, `spatial_key`); remaining kwargs forward to
-`scdiv.tl.diversity`.
+Spatial coordinates are read from `adata.obsm["spatial"]`.
+`partition_kwargs` forwards to `scdiv.spatial.partition` (knobs:
+`method`, `region_size`, `min_cells`, `spatial_key`); remaining kwargs
+forward to `scdiv.tl.diversity`.
 
 ## Numpy interface
 

@@ -149,6 +149,8 @@ def diversity_heatmap(  # noqa: PLR0913
     vmin: float | None = None,
     vmax: float | None = None,
     colorbar: bool = True,
+    annot: bool | int = False,
+    fmt: str = ".2f",
     ax: Axes | None = None,
     **kwargs: object,
 ) -> Axes:
@@ -175,6 +177,13 @@ def diversity_heatmap(  # noqa: PLR0913
             limits are autoscaled from the values.
         colorbar:
             If True, attach a colorbar to ``ax``.
+        annot:
+            If True, write each region's diversity value at its center
+            using a default font size. If an integer, use it as the font
+            size for the annotations.
+        fmt:
+            Format spec for the annotation labels (only used when
+            ``annot`` is truthy).
         ax:
             Matplotlib Axes to draw on. If None, a new figure/axes is
             created.
@@ -202,7 +211,7 @@ def diversity_heatmap(  # noqa: PLR0913
         raise KeyError(msg)
 
     params = adata.uns[params_key]
-    method = params["method"]
+    method = params["partition_method"]
     region_size = params["region_size"]
     centers = params["region_centers"]
 
@@ -224,6 +233,22 @@ def diversity_heatmap(  # noqa: PLR0913
     ax.add_collection(coll)
     ax.autoscale_view()
     ax.set_aspect("equal")
+
+    if annot:
+        annot_fontsize = 7 if annot is True else int(annot)
+        text_vmin = vmin if vmin is not None else float(values.min())
+        text_vmax = vmax if vmax is not None else float(values.max())
+        denom = max(text_vmax - text_vmin, 1e-12)
+        midpoint = 0.5  # switch text color around the cmap midpoint for contrast
+        for lbl, val in zip(labels, values, strict=True):
+            cx, cy = centers[lbl]
+            normed = (float(val) - text_vmin) / denom
+            text_color = "black" if normed > midpoint else "white"
+            ax.text(
+                cx, cy, format(float(val), fmt),
+                ha="center", va="center",
+                fontsize=annot_fontsize, color=text_color,
+            )
 
     if colorbar:
         plt.colorbar(coll, ax=ax, label="Diversity")

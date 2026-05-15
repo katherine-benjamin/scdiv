@@ -561,3 +561,66 @@ def test_group_with_one_cell_type():
         use_highly_variable=False,
     )
     assert abs(adata.uns["scdiv_diversity"]["s2"] - 1.0) < ATOL
+
+
+def test_nan_groupby_dropped_singleton():
+    """Cells with NaN groupby labels should be dropped (singleton mode)."""
+    rng = np.random.default_rng(0)
+    x = rng.random((6, 3))
+    adata_with_nan = _make_adata(x, samples=["s1", "s1", "s2", "s2", None, None])
+    adata_clean = _make_adata(x[:4], samples=["s1", "s1", "s2", "s2"])
+
+    with pytest.warns(UserWarning, match="Dropping 2 cells"):
+        scdiv.tl.diversity(
+            adata_with_nan, 1, groupby="sample", use_highly_variable=False,
+        )
+    scdiv.tl.diversity(
+        adata_clean, 1, groupby="sample", use_highly_variable=False,
+    )
+
+    for key in ("s1", "s2"):
+        np.testing.assert_allclose(
+            adata_with_nan.uns["scdiv_diversity"][key],
+            adata_clean.uns["scdiv_diversity"][key],
+            rtol=RTOL,
+        )
+
+
+def test_nan_groupby_dropped_celltype():
+    """Cells with NaN groupby labels should be dropped (cell-type mode).
+
+    Cell-type mode previously silently included NaN-group cells in the
+    total-cell denominator, inflating w_j and biasing the result.
+    """
+    rng = np.random.default_rng(0)
+    x = rng.random((8, 3))
+    cell_types = ["A", "B", "A", "B", "A", "B", "A", "B"]
+    adata_with_nan = _make_adata(
+        x,
+        cell_types=cell_types,
+        samples=["s1", "s1", "s2", "s2", "s2", "s2", None, None],
+    )
+    adata_clean = _make_adata(
+        x[:6],
+        cell_types=cell_types[:6],
+        samples=["s1", "s1", "s2", "s2", "s2", "s2"],
+    )
+
+    with pytest.warns(UserWarning, match="Dropping 2 cells"):
+        scdiv.tl.diversity(
+            adata_with_nan, 1,
+            cell_type_key="cell_type", groupby="sample",
+            use_highly_variable=False,
+        )
+    scdiv.tl.diversity(
+        adata_clean, 1,
+        cell_type_key="cell_type", groupby="sample",
+        use_highly_variable=False,
+    )
+
+    for key in ("s1", "s2"):
+        np.testing.assert_allclose(
+            adata_with_nan.uns["scdiv_diversity"][key],
+            adata_clean.uns["scdiv_diversity"][key],
+            rtol=RTOL,
+        )

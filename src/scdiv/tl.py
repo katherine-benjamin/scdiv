@@ -104,6 +104,12 @@ def _get_expression_matrix(
     return np.asarray(x, dtype=float)
 
 
+def _is_spatial_partition(adata: AnnData, groupby: str) -> bool:
+    """Return True if ``groupby`` was set by :func:`scdiv.spatial.partition`."""
+    params = adata.uns.get(f"{groupby}_params", None)
+    return isinstance(params, dict) and "partition_method" in params
+
+
 def _get_labels_and_mask(
     adata: AnnData, cell_type_key: str | None
 ) -> tuple[npt.NDArray | None, npt.NDArray]:
@@ -318,6 +324,14 @@ def diversity(  # noqa: PLR0913
         return
 
     groups = pd.Series(adata.obs[groupby])
+    groupby_mask = pd.notna(groups).to_numpy()
+    if not groupby_mask.all() and not _is_spatial_partition(adata, groupby):
+        n_dropped = int((~groupby_mask).sum())
+        warnings.warn(
+            f"Dropping {n_dropped} cells with missing {groupby!r} labels.",
+            stacklevel=2,
+        )
+    mask = mask & groupby_mask
     if labels is None:
         group_divs, meta = _compute_grouped_singleton(
             x,

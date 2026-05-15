@@ -49,7 +49,7 @@ def test_square_assigns_points_to_correct_cell():
     )
     expression = np.ones((5, 2))
     adata = _make_spatial_adata(coords, expression=expression)
-    scdiv.spatial.partition(adata, method="square", region_size=1.0, min_cells=1)
+    scdiv.spatial.partition(adata, method="square", region_size=1.0, min_cells=1, min_density=0.0)
     labels = adata.obs["spatial_region"].to_numpy()
     assert labels[0] == labels[1]
     assert labels[1] != labels[2]
@@ -60,7 +60,7 @@ def test_square_assigns_points_to_correct_cell():
 def test_square_centers_are_geometric_centers():
     coords = np.array([[0.2, 0.3], [0.8, 0.6], [2.5, 2.5]])
     adata = _make_spatial_adata(coords, expression=np.ones((3, 2)))
-    scdiv.spatial.partition(adata, method="square", region_size=1.0, min_cells=1)
+    scdiv.spatial.partition(adata, method="square", region_size=1.0, min_cells=1, min_density=0.0)
     centers = adata.uns["spatial_region_params"]["region_centers"]
     # x_min=0.2, y_min=0.3, region_size=1.0
     # First two points are in the (0,0) region with center (0.7, 0.8)
@@ -80,7 +80,7 @@ def test_square_min_cells_drops_sparse_regions():
         ]
     )
     adata = _make_spatial_adata(coords, expression=np.ones((4, 2)))
-    scdiv.spatial.partition(adata, method="square", region_size=1.0, min_cells=2)
+    scdiv.spatial.partition(adata, method="square", region_size=1.0, min_cells=2, min_density=0.0)
     labels = adata.obs["spatial_region"]
     assert labels.iloc[0] == labels.iloc[1] == labels.iloc[2]
     assert pd.isna(labels.iloc[3])
@@ -95,7 +95,7 @@ def test_hex_axial_origin_at_origin():
     """A point at (0, 0) lands in axial hex (0, 0)."""
     coords = np.array([[0.0, 0.0]])
     adata = _make_spatial_adata(coords, expression=np.ones((1, 2)))
-    scdiv.spatial.partition(adata, method="hex", region_size=1.0, min_cells=1)
+    scdiv.spatial.partition(adata, method="hex", region_size=1.0, min_cells=1, min_density=0.0)
     assert adata.obs["spatial_region"].iloc[0] == "0,0"
 
 
@@ -103,7 +103,7 @@ def test_hex_centers_are_at_axial_positions():
     """Hex centers should match the axial -> pixel formula."""
     coords = np.array([[0.0, 0.0], [3.0, 0.0]])
     adata = _make_spatial_adata(coords, expression=np.ones((2, 2)))
-    scdiv.spatial.partition(adata, method="hex", region_size=1.0, min_cells=1)
+    scdiv.spatial.partition(adata, method="hex", region_size=1.0, min_cells=1, min_density=0.0)
     centers = adata.uns["spatial_region_params"]["region_centers"]
     cx0, cy0 = centers["0,0"]
     assert abs(cx0 - 0.0) < ATOL
@@ -114,7 +114,7 @@ def test_hex_neighboring_points_share_region():
     """Points well inside a single hex share the same label."""
     coords = np.array([[0.0, 0.0], [0.1, 0.1], [-0.1, -0.1]])
     adata = _make_spatial_adata(coords, expression=np.ones((3, 2)))
-    scdiv.spatial.partition(adata, method="hex", region_size=1.0, min_cells=1)
+    scdiv.spatial.partition(adata, method="hex", region_size=1.0, min_cells=1, min_density=0.0)
     labels = adata.obs["spatial_region"].to_numpy()
     assert labels[0] == labels[1] == labels[2] == "0,0"
 
@@ -139,6 +139,81 @@ def test_missing_spatial_key_raises():
         scdiv.spatial.partition(adata, method="square", region_size=1.0)
 
 
+def test_min_density_drops_sparse_regions():
+    """min_density drops regions whose total cell area is too small.
+
+    Region area = 1.0 (square_size=1.0); cell_radius=0.15 gives cell area
+    (2*0.15)**2 = 0.09. Dense region with 10 cells -> coverage=0.9; sparse
+    region with 3 cells -> coverage=0.27. min_density=0.5 keeps dense,
+    drops sparse.
+    """
+    dense = np.vstack(
+        [np.column_stack([np.arange(10) * 0.05 + ix, np.full(10, 0.1)])
+         for ix in range(5)]
+    )
+    sparse = np.array([[10.1, 0.1], [10.2, 0.1], [10.3, 0.1]])
+    coords = np.vstack([dense, sparse])
+    adata = _make_spatial_adata(coords, expression=np.ones((coords.shape[0], 2)))
+
+    scdiv.spatial.partition(
+        adata, method="square", region_size=1.0,
+        min_cells=2, min_density=0.5, cell_radius=0.15,
+    )
+    regions = list(adata.obs["spatial_region"].cat.categories)
+    assert len(regions) == 5
+    assert adata.uns["spatial_region_params"]["min_density"] == 0.5
+    assert adata.uns["spatial_region_params"]["cell_radius"] == 0.15
+
+
+def test_cell_radius_auto_inferred_silently():
+    """cell_radius='auto' infers from data without a warning."""
+    import warnings as _warnings  # noqa: PLC0415
+
+    # 5 dense regions at integer x, cells on a 0.05 grid -> NN dist = 0.05
+    coords = np.vstack(
+        [np.column_stack([np.arange(10) * 0.05 + ix, np.full(10, 0.1)])
+         for ix in range(5)]
+    )
+    adata = _make_spatial_adata(coords, expression=np.ones((coords.shape[0], 2)))
+
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error")
+        scdiv.spatial.partition(
+            adata, method="square", region_size=1.0,
+            min_cells=2, min_density=0.01, cell_radius="auto",
+        )
+    inferred = adata.uns["spatial_region_params"]["cell_radius"]
+    # NN distance is 0.05, expected radius = 0.025 for square
+    assert abs(inferred - 0.025) < 1e-9
+
+
+def test_cell_radius_implicit_warns():
+    """Calling min_density>0 without cell_radius warns about inference."""
+    coords = np.vstack(
+        [np.column_stack([np.arange(10) * 0.05 + ix, np.full(10, 0.1)])
+         for ix in range(5)]
+    )
+    adata = _make_spatial_adata(coords, expression=np.ones((coords.shape[0], 2)))
+    with pytest.warns(UserWarning, match="cell_radius not provided"):
+        scdiv.spatial.partition(
+            adata, method="square", region_size=1.0,
+            min_cells=2, min_density=0.01,
+        )
+
+
+def test_cell_radius_overlap_warns():
+    """Excessive cell_radius (sum exceeds region area) warns."""
+    # 10 cells in 1.0 region; cell_radius=0.5 -> per-cell area = 1.0 ->
+    # coverage = 10 -> warn.
+    coords = np.column_stack([np.arange(10) * 0.05, np.full(10, 0.1)])
+    adata = _make_spatial_adata(coords, expression=np.ones((10, 2)))
+    with pytest.warns(UserWarning, match="exceeds region area"):
+        scdiv.spatial.partition(
+            adata, method="square", region_size=1.0,
+            min_cells=2, min_density=0.1, cell_radius=0.5,
+        )
+
+
 def test_non_positive_region_size_raises():
     adata = _make_spatial_adata(np.zeros((2, 2)), expression=np.ones((2, 2)))
     with pytest.raises(ValueError, match="region_size"):
@@ -156,7 +231,7 @@ def test_partition_then_diversity_alpha():
     x = rng.random((n, 3))
     cell_types = ["A", "B"] * (n // 2)
     adata = _make_spatial_adata(coords, expression=x, cell_types=cell_types)
-    scdiv.spatial.partition(adata, method="square", region_size=2.0, min_cells=2)
+    scdiv.spatial.partition(adata, method="square", region_size=2.0, min_cells=2, min_density=0.0)
     scdiv.tl.diversity(
         adata,
         order=1,
@@ -179,7 +254,7 @@ def test_partition_then_diversity_gamma_aggregate():
     x = rng.random((n, 3))
     cell_types = ["A", "B", "C"] * (n // 3)
     adata = _make_spatial_adata(coords, expression=x, cell_types=cell_types)
-    scdiv.spatial.partition(adata, method="hex", region_size=1.0, min_cells=2)
+    scdiv.spatial.partition(adata, method="hex", region_size=1.0, min_cells=2, min_density=0.0)
     scdiv.tl.diversity(
         adata,
         order=1,
@@ -192,6 +267,35 @@ def test_partition_then_diversity_gamma_aggregate():
     assert "scdiv_diversity_metacommunity" in adata.uns
 
 
+def test_singleton_with_partition_drops_filtered_cells():
+    """spatial.partition + singleton tl.diversity should silently drop
+    cells filtered by min_cells — no crash, no warning (the dropping is
+    intended via min_cells, not missing user data).
+    """
+    import warnings as _warnings  # noqa: PLC0415
+
+    rng = np.random.default_rng(0)
+    populated = rng.random((20, 2)) * 0.4  # within square [0, 1) x [0, 1)
+    isolated = np.array([[10.0, 10.0]])  # far away, will form a 1-cell region
+    coords = np.vstack([populated, isolated])
+    adata = _make_spatial_adata(coords, expression=rng.random((21, 3)))
+
+    scdiv.spatial.partition(adata, method="square", region_size=1.0, min_cells=2, min_density=0.0)
+    assert adata.obs["spatial_region"].isna().sum() == 1
+
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error")
+        scdiv.tl.diversity(
+            adata,
+            order=1,
+            groupby="spatial_region",
+            use_highly_variable=False,
+        )
+    result = adata.uns["scdiv_diversity"]
+    assert isinstance(result, dict)
+    assert all(1.0 - 1e-6 <= v for v in result.values())
+
+
 # --- diversity_heatmap plot ---
 
 
@@ -202,7 +306,7 @@ def _prepared_adata(method="square"):
     x = rng.random((n, 3))
     cell_types = ["A", "B"] * (n // 2)
     adata = _make_spatial_adata(coords, expression=x, cell_types=cell_types)
-    scdiv.spatial.partition(adata, method=method, region_size=2.0, min_cells=2)
+    scdiv.spatial.partition(adata, method=method, region_size=2.0, min_cells=2, min_density=0.0)
     scdiv.tl.diversity(
         adata,
         order=1,
@@ -250,6 +354,25 @@ def test_diversity_heatmap_raises_without_params():
         scdiv.pl.diversity_heatmap(adata)
 
 
+def test_diversity_heatmap_annot_labels_each_region():
+    adata = _prepared_adata(method="square")
+    n_regions = len(adata.uns["scdiv_diversity"])
+    ax = scdiv.pl.diversity_heatmap(adata, annot=True, fmt=".3f", colorbar=False)
+    texts = [t.get_text() for t in ax.texts]
+    assert len(texts) == n_regions
+    expected = {format(float(v), ".3f") for v in adata.uns["scdiv_diversity"].values()}
+    assert set(texts) == expected
+    plt.close(ax.figure)
+
+
+def test_diversity_heatmap_annot_int_sets_fontsize():
+    adata = _prepared_adata(method="square")
+    ax = scdiv.pl.diversity_heatmap(adata, annot=12, colorbar=False)
+    assert ax.texts, "expected annotations when annot is a positive integer"
+    assert all(t.get_fontsize() == 12 for t in ax.texts)
+    plt.close(ax.figure)
+
+
 def test_diversity_wrapper_matches_two_step():
     """scdiv.spatial.diversity should match partition + tl.diversity."""
     rng = np.random.default_rng(7)
@@ -259,7 +382,7 @@ def test_diversity_wrapper_matches_two_step():
     cell_types = ["A", "B"] * (n // 2)
 
     adata_two = _make_spatial_adata(coords, expression=x, cell_types=cell_types)
-    scdiv.spatial.partition(adata_two, method="square", region_size=2.0, min_cells=2)
+    scdiv.spatial.partition(adata_two, method="square", region_size=2.0, min_cells=2, min_density=0.0)
     scdiv.tl.diversity(
         adata_two,
         1,
@@ -273,7 +396,9 @@ def test_diversity_wrapper_matches_two_step():
     scdiv.spatial.diversity(
         adata_one,
         1,
-        partition={"method": "square", "region_size": 2.0, "min_cells": 2},
+        partition_kwargs={
+            "method": "square", "region_size": 2.0, "min_cells": 2, "min_density": 0.0,
+        },
         cell_type_key="cell_type",
         mode="alpha_norm",
         use_highly_variable=False,
@@ -297,7 +422,9 @@ def test_diversity_wrapper_aggregate_flag():
     scdiv.spatial.diversity(
         adata,
         1,
-        partition={"method": "hex", "region_size": 1.0, "min_cells": 2},
+        partition_kwargs={
+            "method": "hex", "region_size": 1.0, "min_cells": 2, "min_density": 0.0,
+        },
         cell_type_key="cell_type",
         mode="gamma",
         aggregate=True,
@@ -313,7 +440,7 @@ def test_diversity_wrapper_rejects_groupby_kwarg():
         scdiv.spatial.diversity(
             adata,
             1,
-            partition={"region_size": 2.0, "min_cells": 1},
+            partition_kwargs={"region_size": 2.0, "min_cells": 1, "min_density": 0.0},
             groupby="something",
             use_highly_variable=False,
         )
@@ -322,7 +449,7 @@ def test_diversity_wrapper_rejects_groupby_kwarg():
 def test_diversity_heatmap_raises_on_scalar():
     rng = np.random.default_rng(0)
     adata = _make_spatial_adata(rng.random((4, 2)), expression=np.ones((4, 2)))
-    scdiv.spatial.partition(adata, method="square", region_size=2.0, min_cells=1)
+    scdiv.spatial.partition(adata, method="square", region_size=2.0, min_cells=1, min_density=0.0)
     scdiv.tl.diversity(adata, 1, use_highly_variable=False)
     with pytest.raises(TypeError, match="grouped result"):
         scdiv.pl.diversity_heatmap(adata)
