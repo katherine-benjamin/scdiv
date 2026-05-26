@@ -57,16 +57,21 @@ def _():
 
 @app.cell(hide_code=True)
 def _(NearestNeighbors, np, plt, sc, sparse):
-    def cluster_scatter(ax, adata, cluster_key="cluster", *, cmap="tab20", **kwargs):
+    def cluster_scatter(
+        ax, adata, cluster_key="cluster", *, cmap="tab20", **kwargs
+    ):
         """Categorical scatter coloured by a cluster column."""
         xy = adata.obsm["spatial"]
         cats = adata.obs[cluster_key].cat.categories
         for i, cat in enumerate(cats):
             mask = (adata.obs[cluster_key] == cat).to_numpy()
             ax.scatter(
-                xy[mask, 0], xy[mask, 1],
+                xy[mask, 0],
+                xy[mask, 1],
                 color=plt.get_cmap(cmap)(i / max(len(cats) - 1, 1)),
-                label=cat, linewidths=0, **kwargs,
+                label=cat,
+                linewidths=0,
+                **kwargs,
             )
 
 
@@ -76,13 +81,17 @@ def _(NearestNeighbors, np, plt, sc, sparse):
         Writes the smoothed expression matrix to ``adata.layers[key_added]``.
         """
         sc.pp.pca(adata, n_comps=n_pcs)
-        _, idx = NearestNeighbors(n_neighbors=n_neighbors).fit(
-            adata.obsm["X_pca"]
-        ).kneighbors(adata.obsm["X_pca"])
+        _, idx = (
+            NearestNeighbors(n_neighbors=n_neighbors)
+            .fit(adata.obsm["X_pca"])
+            .kneighbors(adata.obsm["X_pca"])
+        )
         n = adata.n_obs
         avg = sparse.csr_matrix(
-            (np.full(n * n_neighbors, 1.0 / n_neighbors),
-             (np.repeat(np.arange(n), n_neighbors), idx.ravel())),
+            (
+                np.full(n * n_neighbors, 1.0 / n_neighbors),
+                (np.repeat(np.arange(n), n_neighbors), idx.ravel()),
+            ),
             shape=(n, n),
         )
         adata.layers[key_added] = sparse.csr_matrix(avg @ adata.X.toarray())
@@ -114,13 +123,17 @@ def _(adata, cluster_scatter, plt):
         cluster_scatter(ax, adata, s=1.2)
         ax.set_aspect("equal")
         ax.set_axis_off()
-        ax.set_title("Slide-seqV2 mouse hippocampus: published clusters")
+        ax.set_title("Slide-seqV2 mouse hippocampus — published clusters")
         ax.legend(
-            loc="center left", bbox_to_anchor=(1.0, 0.5),
-            fontsize=8, frameon=False, markerscale=8,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            fontsize=8,
+            frameon=False,
+            markerscale=8,
         )
         fig.tight_layout()
         return fig
+
 
     plot_clusters()
     return
@@ -138,16 +151,19 @@ def _(mo):
 
 @app.cell
 def _(adata, knn_smooth, scdiv):
-    PSEUDO_CELL_SIZE = 40.0  # circumradius of fine hex bins (μm)
+    PSEUDO_CELL_SIZE = 40.0  # μm — circumradius of fine hex bins
 
     ad_pc = scdiv.spatial.pseudo_cells(
-        adata, method="hex", region_size=PSEUDO_CELL_SIZE, min_cells=5,
+        adata,
+        method="hex",
+        region_size=PSEUDO_CELL_SIZE,
+        min_cells=5,
     )
 
     knn_smooth(ad_pc, n_neighbors=15, n_pcs=50)
 
     f"{ad_pc.n_obs} pseudo-cells | median {int(ad_pc.obs['n_cells'].median())} beads each"
-    return (ad_pc,)
+    return PSEUDO_CELL_SIZE, ad_pc
 
 
 @app.cell(hide_code=True)
@@ -165,8 +181,12 @@ def _(mo):
 @app.cell(hide_code=True)
 def _(mo):
     region_size_slider = mo.ui.slider(
-        start=150, stop=500.0, step=25.0, value=250.0,
-        label="Region radius (μm)", show_value=True,
+        start=150,
+        stop=500.0,
+        step=25.0,
+        value=250.0,
+        label="Region radius (μm)",
+        show_value=True,
     )
     region_size_slider
     return (region_size_slider,)
@@ -175,8 +195,12 @@ def _(mo):
 @app.cell
 def _(ad_pc, region_size_slider, scdiv):
     scdiv.spatial.partition(
-        ad_pc, method="hex", region_size=float(region_size_slider.value),
-        min_cells=50, cell_radius="auto", min_density=0.25,
+        ad_pc,
+        method="hex",
+        region_size=float(region_size_slider.value),
+        min_cells=20,
+        cell_radius="auto",
+        min_density=0.25,
     )
     n_regions = int(ad_pc.obs["spatial_region"].cat.categories.size)
     n_regions
@@ -203,19 +227,31 @@ def _(mo):
 
 @app.cell
 def _(ad_pc, n_regions, scdiv):
-    _ = n_regions # Notebook dependency boilerplate
+    _ = n_regions  # Notebook dependency boilerplate
 
 
     # Compute alpha diversity
     scdiv.tl.diversity(
-        ad_pc, order=2, groupby="spatial_region", cell_type_key=None,
-        mode="alpha_norm", layer="smoothed", use_highly_variable=False, key_added="scdiv_alpha",
+        ad_pc,
+        order=2,
+        groupby="spatial_region",
+        cell_type_key=None,
+        mode="alpha_norm",
+        layer="smoothed",
+        use_highly_variable=False,
+        key_added="scdiv_alpha",
     )
 
     # Compute gamma diversity
     scdiv.tl.diversity(
-        ad_pc, order=2, groupby="spatial_region", cell_type_key=None,
-        mode="gamma", layer="smoothed", use_highly_variable=False, key_added="scdiv_gamma",
+        ad_pc,
+        order=2,
+        groupby="spatial_region",
+        cell_type_key=None,
+        mode="gamma",
+        layer="smoothed",
+        use_highly_variable=False,
+        key_added="scdiv_gamma",
     )
 
     diversity_ranges = {
@@ -241,17 +277,21 @@ def _(ad_pc, diversity_ranges, plt, scdiv):
     _keys = ["scdiv_alpha", "scdiv_gamma"]
     _titles = ["Alpha", "Gamma"]
 
+
     def plot_diversity_side_by_side():
 
-        fig, axes = plt.subplots(1,2, figsize=(14,7))
+        fig, axes = plt.subplots(1, 2, figsize=(14, 7))
 
         for i, ax in enumerate(axes):
             vmin, vmax = diversity_ranges[_keys[i]]
-            scdiv.pl.diversity_heatmap(ad_pc, key=_keys[i], ax=ax, vmin=vmin, vmax=vmax)
+            scdiv.pl.diversity_heatmap(
+                ad_pc, key=_keys[i], ax=ax, vmin=vmin, vmax=vmax
+            )
             ax.set_axis_off()
             ax.set_title(_titles[i])
 
         return fig
+
 
     plot_diversity_side_by_side()
     return
@@ -292,15 +332,23 @@ def _(
     _ = diversity_ranges
 
     _fig, (_ax_ann, _ax_div) = plt.subplots(
-        1, 2, figsize=(16, 8), sharex=True, sharey=True,
+        1,
+        2,
+        figsize=(16, 8),
+        sharex=True,
+        sharey=True,
     )
     cluster_scatter(_ax_ann, adata, s=5)
     _ax_ann.set_title("Cluster annotation")
 
     cluster_scatter(_ax_div, adata, s=1.5, alpha=1.0)
     scdiv.pl.diversity_heatmap(
-        ad_pc, key=panel_pick.value, ax=_ax_div,
-        edgecolors="white", linewidths=0.4, alpha=0.45,
+        ad_pc,
+        key=panel_pick.value,
+        ax=_ax_div,
+        edgecolors="white",
+        linewidths=0.4,
+        alpha=0.45,
     )
     _ax_div.set_title(
         f"{panel_pick.selected_key}  |  region_size={region_size_slider.value} μm"
@@ -312,8 +360,12 @@ def _(
 
     _fig.legend(
         *_ax_ann.get_legend_handles_labels(),
-        loc="lower center", ncol=7, bbox_to_anchor=(0.5, -0.02),
-        fontsize=8, frameon=False, markerscale=4,
+        loc="lower center",
+        ncol=7,
+        bbox_to_anchor=(0.5, -0.02),
+        fontsize=8,
+        frameon=False,
+        markerscale=4,
     )
     _fig.tight_layout(rect=[0, 0.06, 1, 1])
     _fig
@@ -342,17 +394,246 @@ def _(ad_pc, diversity_ranges, n_regions, plt, scdiv):
 
     # Plot sparsity heatmap
     scdiv.pl.diversity_heatmap(
-        ad_pc, key="zero_frac", ax=_map,
-        cmap="cividis", colorbar_label="Mean zero fraction", edgecolors="none",
+        ad_pc,
+        key="zero_frac",
+        ax=_map,
+        cmap="cividis",
+        colorbar_label="Mean zero fraction",
+        edgecolors="none",
     )
     _map.set_axis_off()
     _map.set_title(f"Pseudo-cell sparsity")
 
 
     # Plot sparsity vs alpha diversity
-    scdiv.pl.diversity_vs_metric(ad_pc, x_key="zero_frac", key="scdiv_alpha", ax=_scatter)
+    scdiv.pl.diversity_vs_metric(
+        ad_pc, x_key="zero_frac", key="scdiv_alpha", ax=_scatter
+    )
     _fig.tight_layout()
     _fig
+    return
+
+
+@app.cell
+def _(ad_pc, adata, cluster_scatter, diversity_ranges, plt, scdiv):
+    import seaborn as sns
+    import matplotlib as mpl
+
+    sns.set_style("whitegrid")
+    plt.rcParams.update(
+        {
+            "font.size": 12,
+            "axes.titlesize": 12,
+            "axes.labelsize": 12,
+            "legend.fontsize": 9,
+            "text.usetex": True,
+            "text.latex.preamble": r"\usepackage{underscore}",
+            "font.family": "serif",
+            "font.serif": ["Computer Modern Roman"],
+        }
+    )
+
+    mm = 1 / 25.4
+    _fig = plt.figure(figsize=(179 * mm, 195 * mm))
+    _gs = _fig.add_gridspec(
+        3,
+        2,
+        width_ratios=[1.7, 1],
+        height_ratios=[1.15, 1.0, 0.06],
+        hspace=0.15,
+        wspace=0.02,
+    )
+
+    _ax_clust = _fig.add_subplot(_gs[0, 0])
+    _ax_legend = _fig.add_subplot(_gs[0, 1])
+    _ax_legend.set_axis_off()
+    cluster_scatter(_ax_clust, adata, s=1.6)
+    _ax_clust.set_aspect("equal")
+    _ax_clust.set_anchor("E")
+    _ax_clust.set_axis_off()
+    _ax_clust.set_title("Cluster annotation")
+
+    _handles, _labels = _ax_clust.get_legend_handles_labels()
+    _ax_legend.legend(
+        _handles,
+        _labels,
+        loc="center left",
+        ncol=1,
+        fontsize=9,
+        frameon=False,
+        markerscale=5,
+    )
+
+    _mid = _gs[1, :].subgridspec(1, 2, wspace=0.15)
+    _bot = _gs[2, :].subgridspec(1, 2, wspace=0.15)
+    _ax_a = _fig.add_subplot(_mid[0])
+    _ax_g = _fig.add_subplot(_mid[1])
+    _cax_a = _fig.add_subplot(_bot[0])
+    _cax_g = _fig.add_subplot(_bot[1])
+
+    _vmin_a, _vmax_a = diversity_ranges["scdiv_alpha"]
+    _vmin_g, _vmax_g = diversity_ranges["scdiv_gamma"]
+
+    scdiv.pl.diversity_heatmap(
+        ad_pc,
+        key="scdiv_alpha",
+        ax=_ax_a,
+        vmin=_vmin_a,
+        vmax=_vmax_a,
+        colorbar=False,
+    )
+    scdiv.pl.diversity_heatmap(
+        ad_pc,
+        key="scdiv_gamma",
+        ax=_ax_g,
+        vmin=_vmin_g,
+        vmax=_vmax_g,
+        colorbar=False,
+    )
+    _ax_a.set_aspect("equal")
+    _ax_a.set_axis_off()
+    _ax_a.set_title(r"$\alpha$-diversity")
+    _ax_g.set_aspect("equal")
+    _ax_g.set_axis_off()
+    _ax_g.set_title(r"$\gamma$-diversity")
+
+    _fig.colorbar(
+        mpl.cm.ScalarMappable(
+            norm=mpl.colors.Normalize(vmin=_vmin_a, vmax=_vmax_a), cmap="viridis"
+        ),
+        cax=_cax_a,
+        orientation="horizontal",
+        label=r"$\alpha$-diversity",
+    )
+    _fig.colorbar(
+        mpl.cm.ScalarMappable(
+            norm=mpl.colors.Normalize(vmin=_vmin_g, vmax=_vmax_g), cmap="viridis"
+        ),
+        cax=_cax_g,
+        orientation="horizontal",
+        label=r"$\gamma$-diversity",
+    )
+
+    for _ax, _tag in [(_ax_clust, "(a)"), (_ax_a, "(b)"), (_ax_g, "(c)")]:
+        _ax.text(
+            -0.02,
+            1.02,
+            _tag,
+            transform=_ax.transAxes,
+            fontsize=14,
+            fontweight="bold",
+            ha="right",
+            va="bottom",
+        )
+
+    _fig.savefig("hippocampus_diversity.pdf", bbox_inches="tight")
+    _fig
+    return
+
+
+@app.cell
+def _(adata, np, plt):
+    _genes = ["Ttr", "Folr1", "Enpp2"]
+    _xy = adata.obsm["spatial"]
+    _X = adata[:, _genes].X
+    if hasattr(_X, "toarray"):
+        _X = _X.toarray()
+
+    _fig, _axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True, sharey=True)
+    for _ax, _g, _col in zip(_axes, _genes, _X.T):
+        _order = np.argsort(_col)
+        _sc = _ax.scatter(
+            _xy[_order, 0],
+            _xy[_order, 1],
+            c=_col[_order],
+            s=1.0,
+            cmap="magma",
+            linewidths=0,
+        )
+        _ax.set_aspect("equal")
+        _ax.set_axis_off()
+        _ax.set_title(_g)
+        _fig.colorbar(_sc, ax=_ax, fraction=0.04, pad=0.02)
+    _fig.tight_layout()
+    _fig
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Summary statistics
+
+    A quick recap of the key numbers for this dataset.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(PSEUDO_CELL_SIZE, ad_pc, adata, n_regions, np, sparse):
+    from scipy.spatial import cKDTree
+
+    # Beads
+    _n_beads = adata.n_obs
+    _n_genes = adata.n_vars
+    _n_clusters = len(adata.obs["cluster"].cat.categories)
+
+    _X = adata.X.toarray() if sparse.issparse(adata.X) else adata.X
+    _umis_per_bead = _X.sum(axis=1)
+    _total_umis = int(_umis_per_bead.sum())
+    _median_umis = float(np.median(_umis_per_bead))
+    _mean_umis = float(_umis_per_bead.mean())
+
+    _xy = adata.obsm["spatial"]
+    _extent_x = _xy[:, 0].max() - _xy[:, 0].min()
+    _extent_y = _xy[:, 1].max() - _xy[:, 1].min()
+
+    # Bead pitch from nearest-neighbour distance
+    _d, _ = cKDTree(_xy).query(_xy, k=2)
+    _bead_pitch = float(np.median(_d[:, 1]))
+
+    # Pseudo-cells
+    _n_pseudo = ad_pc.n_obs
+    _beads_per_pc = ad_pc.obs["n_cells"]
+
+    # Regions
+    _pc_per_region = ad_pc.obs["spatial_region"].value_counts()
+    _region_size = float(ad_pc.uns["spatial_region_params"]["region_size"])
+
+    print("Slide-seqV2 puck (raw beads)")
+    print("-" * 40)
+    print(f"  number of beads        : {_n_beads:>8,}")
+    print(f"  number of genes        : {_n_genes:>8,}")
+    print(f"  number of clusters     : {_n_clusters:>8}")
+    print(f"  total UMIs             : {_total_umis:>8,}")
+    print(f"  UMIs per bead (median) : {_median_umis:>8.0f}")
+    print(f"  UMIs per bead (mean)   : {_mean_umis:>8.1f}")
+    print(f"  bead pitch (median NN) : {_bead_pitch:>8.2f} um")
+    print(f"  spatial extent         : {_extent_x:.0f} x {_extent_y:.0f} um")
+    print()
+    print("Pseudo-cells (after scdiv.spatial.pseudo_cells + smoothing)")
+    print("-" * 40)
+    print(f"  number of pseudo-cells : {_n_pseudo:>8,}")
+    print(
+        f"  pseudo-cell radius     : {PSEUDO_CELL_SIZE:>8.0f} um  (hex circumradius)"
+    )
+    print(
+        f"  beads per pseudo-cell  :   median {int(_beads_per_pc.median())}, "
+        f"mean {_beads_per_pc.mean():.1f}, range {_beads_per_pc.min()}-{_beads_per_pc.max()}"
+    )
+    print(f"  HVGs used              :     none  (all {_n_genes} genes)")
+    print(f"  KNN smoothing          :     k=15 neighbours in 50 PC space")
+    print()
+    print("Regions (after scdiv.spatial.partition)")
+    print("-" * 40)
+    print(f"  number of regions      : {n_regions:>8}")
+    print(
+        f"  region radius          : {_region_size:>8.0f} um  (hex circumradius)"
+    )
+    print(
+        f"  pseudo-cells / region  :   median {int(_pc_per_region.median())}, "
+        f"mean {_pc_per_region.mean():.1f}, range {_pc_per_region.min()}-{_pc_per_region.max()}"
+    )
     return
 
 

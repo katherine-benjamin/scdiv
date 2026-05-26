@@ -1,10 +1,8 @@
 # Tutorials
 
-Marimo notebook tutorials will live here. Export each notebook to static HTML:
+Each tutorial is a [marimo](https://marimo.io) notebook. The links below
+open the rendered notebook in a new tab; the original `.py` notebooks live
+in [`examples/`](https://github.com/katherine-benjamin/scdiv/tree/main/examples)
+and can be run interactively with `marimo edit`.
 
-```bash
-marimo export html notebooks/<name>.py -o docs/tutorials/<name>.html
-```
-
-Then either link to it from this page, or embed via a `{raw} html` directive
-on a per-tutorial page.
+- <a href="slideseq_hippocampus.html">Spatial diversity in mouse hippocampus (Slide-seqV2)</a>
