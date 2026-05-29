@@ -233,6 +233,17 @@ def _compute_grouped_celltype(  # noqa: PLR0913
         cols.append(_build_distribution_for_types(labels[group_mask], cell_types))
         weights.append(n_group / n_total)
 
+    if not group_keys:
+        warnings.warn(
+            "No non-empty groups for diversity computation; "
+            "returning empty per-group result and NaN aggregate.",
+            stacklevel=3,
+        )
+        return {}, (float("nan") if aggregate else None), {
+            "similarity": sim,
+            "cell_types": list(cell_types),
+        }
+
     distributions = np.column_stack(cols)
     per_group, meta = scdiv.diversity.partition_diversity(
         sim,
@@ -259,6 +270,13 @@ def _compute_grouped_singleton(
     """Per-group diversity in singleton mode (each cell its own type)."""
     x_norm = scdiv.similarity.l2_normalize_rows(x[mask])
     group_keys, group_idx = np.unique(groups[mask].to_numpy(), return_inverse=True)
+    if len(group_keys) == 0:
+        warnings.warn(
+            "No non-empty groups for diversity computation; "
+            "returning empty per-group result and NaN aggregate.",
+            stacklevel=3,
+        )
+        return {}, (float("nan") if aggregate else None)
     per_group, meta = scdiv.diversity.partition_diversity_singleton(
         x_norm,
         group_idx,
