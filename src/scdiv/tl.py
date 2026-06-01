@@ -25,13 +25,14 @@ def _build_distribution_for_types(
     return distribution / distribution.sum()
 
 
-def _compute_cell_type_diversity(
+def _compute_cell_type_diversity(  # noqa: PLR0913
     x: npt.NDArray,
     labels: npt.NDArray,
     order: float,
     *,
     similarity: npt.NDArray | None = None,
     cell_types: npt.NDArray | None = None,
+    alpha: float = 1.0,
 ) -> tuple[float, npt.NDArray, npt.NDArray, npt.NDArray]:
     """Compute diversity in cell-type mode.
 
@@ -44,7 +45,7 @@ def _compute_cell_type_diversity(
 
     """
     if similarity is None:
-        similarity, cell_types = scdiv.similarity.cell_type_similarity(x, labels)
+        similarity, cell_types = scdiv.similarity.cell_type_similarity(x, labels, alpha)
         dist, _ = scdiv.diversity.distribution_from_labels(labels)
     else:
         if cell_types is None:
@@ -55,13 +56,15 @@ def _compute_cell_type_diversity(
     return div, similarity, cell_types, dist
 
 
-def _compute_singleton_diversity(x: npt.NDArray, order: float) -> float:
+def _compute_singleton_diversity(
+    x: npt.NDArray, order: float, alpha: float = 1.0
+) -> float:
     """Compute diversity treating each cell as its own type.
 
     Uses factored O(n*d) computation to avoid materialising the
     n_cells x n_cells similarity matrix.
     """
-    x_norm = scdiv.similarity.l2_normalize_rows(x)
+    x_norm = scdiv.similarity.feature_transform(x, alpha)
     n = x_norm.shape[0]
     distribution = np.ones(n) / n
     w_sims = scdiv.similarity.weighted_cosine_similarities(x_norm, distribution)
@@ -172,6 +175,7 @@ def _compute_global(
     mask: npt.NDArray,
     labels: npt.NDArray | None,
     order: float,
+    alpha: float = 1.0,
 ) -> tuple[float, dict]:
     """Compute a single diversity value across all (masked) cells.
 
@@ -181,6 +185,7 @@ def _compute_global(
         labels: Cell type labels, shape (n_cells,), or None for
             singleton mode.
         order: Order of the power mean.
+        alpha: Exponent of the probability-geometric similarity family.
 
     Returns:
         (diversity_value, extras) where extras is a dict of computed
@@ -191,11 +196,11 @@ def _compute_global(
     x_masked = x[mask]
 
     if labels is None:
-        return _compute_singleton_diversity(x_masked, order), {}
+        return _compute_singleton_diversity(x_masked, order, alpha), {}
 
     labels_masked = labels[mask]
     div, sim, cell_types, dist = _compute_cell_type_diversity(
-        x_masked, labels_masked, order
+        x_masked, labels_masked, order, alpha=alpha
     )
     extras = {
         "similarity": sim,
@@ -214,11 +219,14 @@ def _compute_grouped_celltype(  # noqa: PLR0913
     *,
     mode: Mode,
     aggregate: bool,
+    alpha: float = 1.0,
 ) -> tuple[dict, float | None, dict]:
     """Per-group diversity in cell-type mode via Reeve partition diversity."""
     x_masked = x[mask]
     labels_masked = labels[mask]
-    sim, cell_types = scdiv.similarity.cell_type_similarity(x_masked, labels_masked)
+    sim, cell_types = scdiv.similarity.cell_type_similarity(
+        x_masked, labels_masked, alpha
+    )
     n_total = int(mask.sum())
 
     group_keys: list = []
@@ -258,7 +266,7 @@ def _compute_grouped_celltype(  # noqa: PLR0913
     return group_diversities, meta, extras
 
 
-def _compute_grouped_singleton(
+def _compute_grouped_singleton(  # noqa: PLR0913
     x: npt.NDArray,
     mask: npt.NDArray,
     order: float,
@@ -266,9 +274,10 @@ def _compute_grouped_singleton(
     *,
     mode: Mode,
     aggregate: bool,
+    alpha: float = 1.0,
 ) -> tuple[dict, float | None]:
     """Per-group diversity in singleton mode (each cell its own type)."""
-    x_norm = scdiv.similarity.l2_normalize_rows(x[mask])
+    x_norm = scdiv.similarity.feature_transform(x[mask], alpha)
     group_keys, group_idx = np.unique(groups[mask].to_numpy(), return_inverse=True)
     if len(group_keys) == 0:
         warnings.warn(
@@ -296,6 +305,7 @@ def diversity(  # noqa: PLR0913
     layer: str | None = None,
     obsm: str | None = None,
     use_highly_variable: bool = True,
+    alpha: float = 1.0,
     mode: Mode = "alpha_norm",
     aggregate: bool = False,
     key_added: str = "scdiv_diversity",
@@ -331,6 +341,12 @@ def diversity(  # noqa: PLR0913
             If True, restrict to genes marked as highly variable in
             adata.var['highly_variable']. If False, use all genes.
             Ignored when ``obsm`` is set.
+        alpha:
+            Exponent of the probability-geometric similarity family. Each
+            cell is treated as a distribution over genes, raised to the
+            power ``alpha`` before L2 normalisation. ``alpha=1`` (default)
+            is cosine similarity; ``alpha=0.5`` is Bhattacharyya; smaller
+            values down-weight highly expressed genes.
         mode:
             Partition diversity mode in the style of Reeve et al. (2016),
             relevant when ``groupby`` is set. One of:
@@ -354,6 +370,9 @@ def diversity(  # noqa: PLR0913
     if mode not in _MODES:
         msg = f"mode must be one of {_MODES}, got {mode!r}."
         raise ValueError(msg)
+    if alpha <= 0:
+        msg = f"alpha must be positive, got {alpha!r}."
+        raise ValueError(msg)
     if groupby is None and aggregate:
         msg = "aggregate=True requires groupby to be set."
         raise ValueError(msg)
@@ -373,11 +392,12 @@ def diversity(  # noqa: PLR0913
         "layer": layer,
         "obsm": obsm,
         "use_highly_variable": use_highly_variable,
+        "alpha": alpha,
         "mode": mode,
     }
 
     if groupby is None:
-        div, extras = _compute_global(x, mask, labels, order)
+        div, extras = _compute_global(x, mask, labels, order, alpha)
         adata.uns[key_added] = div
         adata.uns[f"{key_added}_params"] = {**base_params, **extras}
         return
@@ -399,6 +419,7 @@ def diversity(  # noqa: PLR0913
             groups,
             mode=mode,
             aggregate=aggregate,
+            alpha=alpha,
         )
         extras: dict = {}
     else:
@@ -410,6 +431,7 @@ def diversity(  # noqa: PLR0913
             groups,
             mode=mode,
             aggregate=aggregate,
+            alpha=alpha,
         )
     adata.uns[key_added] = group_divs
     adata.obs[key_added] = groups.map(group_divs).to_numpy()

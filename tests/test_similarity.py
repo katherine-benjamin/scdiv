@@ -6,6 +6,7 @@ from hypothesis.extra.numpy import arrays
 
 from scdiv.similarity import (
     cosine_similarity_matrix,
+    feature_transform,
     l2_normalize_rows,
     weighted_cosine_similarities,
 )
@@ -55,6 +56,29 @@ def test_cosine_similarity_nonneg_for_nonneg_input(x):
     sim = cosine_similarity_matrix(x)
     atol = 1e-10
     assert np.all(sim >= -atol)
+
+
+@given(expression_matrices)
+def test_feature_transform_alpha_one_is_cosine_normalization(x):
+    npt.assert_allclose(feature_transform(x, 1.0), l2_normalize_rows(x), rtol=1e-10)
+
+
+@given(expression_matrices)
+def test_feature_transform_alpha_half_is_bhattacharyya(x):
+    row_sums = x.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1
+    expected = l2_normalize_rows(np.sqrt(x / row_sums))
+    npt.assert_allclose(feature_transform(x, 0.5), expected, rtol=1e-6, atol=1e-15)
+
+
+@given(expression_matrices)
+def test_feature_transform_rows_unit_norm_or_zero(x):
+    norms = np.linalg.norm(feature_transform(x, 0.5), axis=1)
+    for norm, row_sum in zip(norms, x.sum(axis=1), strict=True):
+        if row_sum == 0:
+            npt.assert_allclose(norm, 0.0, atol=1e-10)
+        else:
+            npt.assert_allclose(norm, 1.0, rtol=1e-6)
 
 
 @st.composite

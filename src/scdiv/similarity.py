@@ -18,17 +18,44 @@ def l2_normalize_rows(x: npt.NDArray) -> npt.NDArray:
     return x / norms
 
 
-def cosine_similarity_matrix(x: npt.NDArray) -> npt.NDArray:
-    """Compute the cosine similarity matrix from row vectors.
+def feature_transform(x: npt.NDArray, alpha: float = 1.0) -> npt.NDArray:
+    """Map non-negative rows to L2-normalized probability-geometric features.
+
+    Each row is raised elementwise to the power ``alpha``, then
+    L2-normalized. Feeding the result into the cosine matvec yields the
+    probability-geometric similarity family:
+
+    - ``alpha=1``: plain cosine similarity of the expression vectors.
+    - ``alpha=0.5``: Bhattacharyya (Hellinger) similarity.
+    - smaller ``alpha``: progressively down-weights highly expressed genes,
+      so a handful of high-count genes no longer dominate the similarity.
+
+    Args:
+        x: Non-negative matrix of shape (n, d).
+        alpha: Exponent of the probability-geometric family.
+
+    Returns:
+        L2-row-normalized features, shape (n, d).
+
+    """
+    if alpha == 1.0:
+        return l2_normalize_rows(x)
+    return l2_normalize_rows(x**alpha)
+
+
+def cosine_similarity_matrix(x: npt.NDArray, alpha: float = 1.0) -> npt.NDArray:
+    """Compute the probability-geometric similarity matrix from row vectors.
 
     Args:
         x: Matrix of shape (n, d).
+        alpha: Exponent of the probability-geometric family (see
+            :func:`feature_transform`). ``alpha=1`` is cosine similarity.
 
     Returns:
-        Cosine similarity matrix of shape (n, n) with values in [-1, 1].
+        Similarity matrix of shape (n, n) with values in [-1, 1].
 
     """
-    x_norm = l2_normalize_rows(x)
+    x_norm = feature_transform(x, alpha)
     return x_norm @ x_norm.T
 
 
@@ -82,15 +109,18 @@ def _mean_expression_per_type(
 def cell_type_similarity(
     x: npt.NDArray | scipy.sparse.sparray,
     labels: npt.NDArray,
+    alpha: float = 1.0,
 ) -> tuple[npt.NDArray, npt.NDArray]:
-    """Compute cosine similarity matrix between cell types.
+    """Compute the similarity matrix between cell types.
 
-    Pipeline: compute mean expression per type, then cosine similarity
-    between the mean vectors.
+    Pipeline: compute mean expression per type, then probability-geometric
+    similarity between the mean vectors.
 
     Args:
         x: Expression matrix, shape (n_cells, n_genes). Can be sparse.
         labels: Cell type label for each cell, shape (n_cells,).
+        alpha: Exponent of the probability-geometric family (see
+            :func:`feature_transform`). ``alpha=1`` is cosine similarity.
 
     Returns:
         (similarity_matrix, cell_types) where similarity_matrix has
@@ -101,4 +131,4 @@ def cell_type_similarity(
     cell_types = np.unique(labels)
     x_dense = _to_dense(x)
     means = _mean_expression_per_type(x_dense, labels, cell_types)
-    return cosine_similarity_matrix(means), cell_types
+    return cosine_similarity_matrix(means, alpha), cell_types

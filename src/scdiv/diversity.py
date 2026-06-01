@@ -259,18 +259,22 @@ def partition_diversity_singleton(
     return per_group, meta
 
 
-def diversity_from_counts(x: npt.NDArray, labels: npt.NDArray, order: float) -> float:
+def diversity_from_counts(
+    x: npt.NDArray, labels: npt.NDArray, order: float, alpha: float = 1.0
+) -> float:
     """Compute diversity directly from a count matrix and cell type labels.
 
     Args:
         x: Expression matrix, shape (n_cells, n_genes). Can be sparse.
         labels: Cell type label for each cell, shape (n_cells,).
         order: The order of the diversity.
+        alpha: Exponent of the probability-geometric similarity family
+            (see :func:`scdiv.similarity.feature_transform`).
 
     Returns:
         The similarity-sensitive diversity.
 
     """
-    sim, _ = scdiv.similarity.cell_type_similarity(x, labels)
+    sim, _ = scdiv.similarity.cell_type_similarity(x, labels, alpha)
     dist, _ = distribution_from_labels(labels)
     return diversity(sim, order, dist)

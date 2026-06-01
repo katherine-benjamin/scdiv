@@ -103,6 +103,33 @@ def test_cell_type_diversity_in_range(adata_and_n, order):
     assert 1 - RTOL <= div <= n_types * (1 + RTOL)
 
 
+@pytest.mark.parametrize("alpha", [0.0, -0.5])
+def test_nonpositive_alpha_raises(alpha):
+    adata = _make_adata(np.ones((2, 2)))
+    with pytest.raises(ValueError, match="alpha must be positive"):
+        scdiv.tl.diversity(adata, 1.0, alpha=alpha, use_highly_variable=False)
+
+
+def test_alpha_recorded_in_params():
+    x = np.random.default_rng(0).random((5, 3))
+    adata = _make_adata(x)
+    scdiv.tl.diversity(adata, 1.0, alpha=0.5, use_highly_variable=False)
+    assert adata.uns["scdiv_diversity_params"]["alpha"] == 0.5
+
+
+def test_alpha_changes_diversity():
+    rng = np.random.default_rng(0)
+    x = rng.poisson(2.0, size=(30, 20)).astype(float)
+    types = ["A"] * 10 + ["B"] * 10 + ["C"] * 10
+    adata = _make_adata(x, cell_types=types)
+    adata2 = adata.copy()
+    scdiv.tl.diversity(adata, 1.0, cell_type_key="cell_type", use_highly_variable=False)
+    scdiv.tl.diversity(
+        adata2, 1.0, cell_type_key="cell_type", alpha=0.5, use_highly_variable=False
+    )
+    assert adata.uns["scdiv_diversity"] != adata2.uns["scdiv_diversity"]
+
+
 @given(orders)
 def test_single_cell_type_gives_one(order):
     x = np.random.default_rng(0).random((5, 3))
