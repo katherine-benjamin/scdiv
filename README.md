@@ -51,6 +51,11 @@ scdiv.tl.diversity(adata, order=1)
 - `use_highly_variable=False`: use all genes (default is `True`, which
   requires `sc.pp.highly_variable_genes` to have been run). Ignored
   when `obsm` is set.
+- `alpha=1.0` (default): exponent of the probability-geometric similarity
+  family. Each cell is treated as a distribution over genes and raised to
+  the power `alpha` before normalisation. `alpha=1` is cosine similarity;
+  `alpha=0.5` is Bhattacharyya; smaller values down-weight highly
+  expressed genes so a handful of high-count genes no longer dominate.
 - `mode="alpha_norm"` (default), `"alpha"`, or `"gamma"`: partition
   diversity mode in the style of Reeve et al. (2016), used with `groupby`.
   `alpha_norm` is each subcommunity's standalone Leinster–Cobbold
