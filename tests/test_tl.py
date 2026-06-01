@@ -103,6 +103,54 @@ def test_cell_type_diversity_in_range(adata_and_n, order):
     assert 1 - RTOL <= div <= n_types * (1 + RTOL)
 
 
+def test_get_expression_matrix_keeps_sparse():
+    import scipy.sparse
+
+    from scdiv.tl import _get_expression_matrix
+
+    adata = _make_adata(np.zeros((5, 5)))
+    adata.layers["sp"] = scipy.sparse.csr_matrix(np.eye(5, dtype=np.float32))
+    out = _get_expression_matrix(adata, "sp", use_highly_variable=False)
+    assert scipy.sparse.issparse(out)
+    assert out.dtype == np.float32
+
+
+@pytest.mark.parametrize("order", [0.0, 1.0, 2.0])
+@pytest.mark.parametrize("alpha", [1.0, 0.5])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"cell_type_key": "cell_type"},
+        {"groupby": "sample"},
+        {"cell_type_key": "cell_type", "groupby": "sample"},
+    ],
+)
+def test_sparse_float32_layer_matches_dense(order, alpha, kwargs):
+    import scipy.sparse
+
+    rng = np.random.default_rng(0)
+    x = rng.poisson(1.5, size=(40, 25)).astype(float)
+    types = [f"t{i % 4}" for i in range(40)]
+    samples = [f"s{i % 3}" for i in range(40)]
+    adata = _make_adata(x, cell_types=types, samples=samples)
+    adata.layers["sparse"] = scipy.sparse.csr_matrix(x.astype(np.float32))
+
+    a_dense = adata.copy()
+    a_sparse = adata.copy()
+    scdiv.tl.diversity(a_dense, order, alpha=alpha, use_highly_variable=False, **kwargs)
+    scdiv.tl.diversity(
+        a_sparse, order, alpha=alpha, layer="sparse", use_highly_variable=False, **kwargs
+    )
+    dense, sparse = a_dense.uns["scdiv_diversity"], a_sparse.uns["scdiv_diversity"]
+    if isinstance(dense, dict):
+        assert dense.keys() == sparse.keys()
+        for key in dense:
+            assert dense[key] == pytest.approx(sparse[key], rel=1e-4)
+    else:
+        assert dense == pytest.approx(sparse, rel=1e-4)
+
+
 @pytest.mark.parametrize("alpha", [0.0, -0.5])
 def test_nonpositive_alpha_raises(alpha):
     adata = _make_adata(np.ones((2, 2)))

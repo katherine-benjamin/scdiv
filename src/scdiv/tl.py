@@ -5,11 +5,13 @@ import warnings
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import scipy.sparse
 from anndata import AnnData
 
 import scdiv.diversity
 import scdiv.similarity
 from scdiv.diversity import _MODES, Mode
+from scdiv.similarity import Matrix
 
 
 def _build_distribution_for_types(
@@ -79,14 +81,18 @@ def _get_expression_matrix(
     obsm: str | None = None,
     *,
     use_highly_variable: bool = True,
-) -> npt.NDArray:
-    """Extract a per-cell vector representation as a dense numpy array.
+) -> Matrix:
+    """Extract a per-cell vector representation.
 
     The source is picked from at most one of:
 
     - ``obsm``: a key in ``adata.obsm`` (``use_highly_variable`` ignored)
     - ``layer``: a key in ``adata.layers``. Same shape as ``adata.X``;
     - neither: ``adata.X``.
+
+    Sparse sources are returned as sparse (CSR) and the input dtype is
+    preserved, so large sparse layers are not densified or upcast to
+    float64. The downstream matvecs work natively on sparse input.
 
     Args:
         adata: Annotated data matrix.
@@ -97,7 +103,7 @@ def _get_expression_matrix(
             Ignored when ``obsm`` is set.
 
     Returns:
-        Dense matrix of shape ``(n_cells, n_features)``.
+        Matrix of shape ``(n_cells, n_features)``, dense or sparse.
 
     """
     if obsm is not None:
@@ -129,9 +135,9 @@ def _get_expression_matrix(
         hvg_mask = adata.var["highly_variable"].to_numpy()
         x = x[:, hvg_mask]  # ty: ignore[not-subscriptable]
 
-    if hasattr(x, "todense"):
-        return np.asarray(x.todense())  # ty: ignore[call-non-callable]
-    return np.asarray(x, dtype=float)
+    if scipy.sparse.issparse(x):
+        return x.tocsr()
+    return np.asarray(x)
 
 
 def _is_spatial_partition(adata: AnnData, groupby: str) -> bool:

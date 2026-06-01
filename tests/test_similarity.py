@@ -1,10 +1,12 @@
 import hypothesis.strategies as st
 import numpy as np
 import numpy.testing as npt
+import scipy.sparse
 from hypothesis import given
 from hypothesis.extra.numpy import arrays
 
 from scdiv.similarity import (
+    cell_type_similarity,
     cosine_similarity_matrix,
     feature_transform,
     l2_normalize_rows,
@@ -79,6 +81,35 @@ def test_feature_transform_rows_unit_norm_or_zero(x):
             npt.assert_allclose(norm, 0.0, atol=1e-10)
         else:
             npt.assert_allclose(norm, 1.0, rtol=1e-6)
+
+
+@given(expression_matrices)
+def test_l2_normalize_rows_sparse_matches_dense(x):
+    dense = l2_normalize_rows(x)
+    sparse = l2_normalize_rows(scipy.sparse.csr_matrix(x))
+    npt.assert_allclose(sparse.toarray(), dense, rtol=1e-6, atol=1e-12)
+
+
+@given(expression_matrices, st.sampled_from([1.0, 0.5, 0.25]))
+def test_feature_transform_sparse_matches_dense(x, alpha):
+    dense = feature_transform(x, alpha)
+    sparse = feature_transform(scipy.sparse.csr_matrix(x), alpha)
+    npt.assert_allclose(sparse.toarray(), dense, rtol=1e-6, atol=1e-12)
+
+
+def test_feature_transform_keeps_float32_sparse():
+    x = scipy.sparse.csr_matrix(np.eye(4, dtype=np.float32))
+    assert feature_transform(x, 1.0).dtype == np.float32
+    assert feature_transform(x, 0.5).dtype == np.float32
+
+
+def test_cell_type_similarity_sparse_matches_dense():
+    rng = np.random.default_rng(0)
+    x = rng.poisson(1.5, size=(20, 8)).astype(float)
+    labels = np.array([f"t{i % 3}" for i in range(20)])
+    dense_sim, _ = cell_type_similarity(x, labels, alpha=0.5)
+    sparse_sim, _ = cell_type_similarity(scipy.sparse.csr_matrix(x), labels, alpha=0.5)
+    npt.assert_allclose(sparse_sim, dense_sim, rtol=1e-6, atol=1e-12)
 
 
 @st.composite

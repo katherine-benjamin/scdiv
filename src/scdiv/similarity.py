@@ -4,21 +4,28 @@ import numpy as np
 import numpy.typing as npt
 import scipy.sparse
 
+Matrix = npt.NDArray | scipy.sparse.sparray
 
-def _to_dense(x: npt.NDArray | scipy.sparse.sparray) -> npt.NDArray:
+
+def l2_normalize_rows(x: Matrix) -> Matrix:
+    """L2-normalize each row. Rows with zero norm are left as zeros.
+
+    Accepts dense arrays or scipy sparse matrices; sparse input is kept
+    sparse (no densification).
+    """
     if scipy.sparse.issparse(x):
-        return np.asarray(x.todense())  # ty: ignore[unresolved-attribute]`
-    return np.asarray(x, dtype=float)
-
-
-def l2_normalize_rows(x: npt.NDArray) -> npt.NDArray:
-    """L2-normalize each row. Rows with zero norm are left as zeros."""
+        norms = np.sqrt(np.asarray(x.multiply(x).sum(axis=1)).ravel())
+        norms[norms == 0] = 1
+        # Keep the scaling in the input float dtype so a float32 matrix
+        # stays float32 (ints promote to float64).
+        out_dtype = np.promote_types(x.dtype, np.float32)
+        return scipy.sparse.diags((1.0 / norms).astype(out_dtype)) @ x
     norms = np.linalg.norm(x, axis=1, keepdims=True)
     norms[norms == 0] = 1
     return x / norms
 
 
-def feature_transform(x: npt.NDArray, alpha: float = 1.0) -> npt.NDArray:
+def feature_transform(x: Matrix, alpha: float = 1.0) -> Matrix:
     """Map non-negative rows to L2-normalized probability-geometric features.
 
     Each row is raised elementwise to the power ``alpha``, then
@@ -30,6 +37,9 @@ def feature_transform(x: npt.NDArray, alpha: float = 1.0) -> npt.NDArray:
     - smaller ``alpha``: progressively down-weights highly expressed genes,
       so a handful of high-count genes no longer dominate the similarity.
 
+    Accepts dense arrays or scipy sparse matrices; sparse input is kept
+    sparse.
+
     Args:
         x: Non-negative matrix of shape (n, d).
         alpha: Exponent of the probability-geometric family.
@@ -40,7 +50,8 @@ def feature_transform(x: npt.NDArray, alpha: float = 1.0) -> npt.NDArray:
     """
     if alpha == 1.0:
         return l2_normalize_rows(x)
-    return l2_normalize_rows(x**alpha)
+    powered = x.power(alpha) if scipy.sparse.issparse(x) else x**alpha
+    return l2_normalize_rows(powered)
 
 
 def cosine_similarity_matrix(x: npt.NDArray, alpha: float = 1.0) -> npt.NDArray:
@@ -79,12 +90,12 @@ def weighted_cosine_similarities(
 
 
 def _mean_expression_per_type(
-    x: npt.NDArray, labels: npt.NDArray, cell_types: npt.NDArray
-) -> npt.NDArray:
+    x: Matrix, labels: npt.NDArray, cell_types: npt.NDArray
+) -> Matrix:
     """Compute mean expression vector for each cell type.
 
     Args:
-        x: Expression matrix, shape (n_cells, n_genes).
+        x: Expression matrix, shape (n_cells, n_genes). Can be sparse.
         labels: Cell type label for each cell, shape (n_cells,).
         cell_types: Unique cell types to compute means for. Must be
             sorted and contain every label (true when
@@ -129,6 +140,7 @@ def cell_type_similarity(
 
     """
     cell_types = np.unique(labels)
-    x_dense = _to_dense(x)
-    means = _mean_expression_per_type(x_dense, labels, cell_types)
+    means = _mean_expression_per_type(x, labels, cell_types)
+    if scipy.sparse.issparse(means):
+        means = np.asarray(means.todense())
     return cosine_similarity_matrix(means, alpha), cell_types

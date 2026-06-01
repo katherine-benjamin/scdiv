@@ -32,6 +32,11 @@ def diversity_from_weighted_similarities(
         The diversity of the data set.
 
     """
+    # The feature matrix may be float32 (e.g. a sparse smoothed layer); the
+    # weighted-similarity vector is small, so upcast it here to keep the
+    # Hill-number reduction in float64 and avoid underflow at q != 1.
+    weighted_similarities = np.asarray(weighted_similarities, dtype=np.float64)
+
     if np.isposinf(order):
         return 1 / weighted_similarities.max()
 
