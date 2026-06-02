@@ -1,6 +1,7 @@
 """AnnData integration for similarity-sensitive diversity measures."""
 
 import warnings
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -10,8 +11,8 @@ from anndata import AnnData
 
 import scdiv.diversity
 import scdiv.similarity
+from scdiv._types import Matrix
 from scdiv.diversity import _MODES, Mode
-from scdiv.similarity import Matrix
 
 
 def _build_distribution_for_types(
@@ -28,7 +29,7 @@ def _build_distribution_for_types(
 
 
 def _compute_cell_type_diversity(  # noqa: PLR0913
-    x: npt.NDArray,
+    x: Matrix,
     labels: npt.NDArray,
     order: float,
     *,
@@ -59,7 +60,7 @@ def _compute_cell_type_diversity(  # noqa: PLR0913
 
 
 def _compute_singleton_diversity(
-    x: npt.NDArray, order: float, alpha: float = 1.0
+    x: Matrix, order: float, alpha: float = 1.0
 ) -> float:
     """Compute diversity treating each cell as its own type.
 
@@ -67,7 +68,7 @@ def _compute_singleton_diversity(
     n_cells x n_cells similarity matrix.
     """
     x_norm = scdiv.similarity.feature_transform(x, alpha)
-    n = x_norm.shape[0]
+    n = cast("npt.NDArray", x_norm).shape[0]
     distribution = np.ones(n) / n
     w_sims = scdiv.similarity.weighted_cosine_similarities(x_norm, distribution)
     return scdiv.diversity.diversity_from_weighted_similarities(
@@ -90,10 +91,6 @@ def _get_expression_matrix(
     - ``layer``: a key in ``adata.layers``. Same shape as ``adata.X``;
     - neither: ``adata.X``.
 
-    Sparse sources are returned as sparse (CSR) and the input dtype is
-    preserved, so large sparse layers are not densified or upcast to
-    float64. The downstream matvecs work natively on sparse input.
-
     Args:
         adata: Annotated data matrix.
         layer: Key in ``adata.layers``, or None.
@@ -103,7 +100,7 @@ def _get_expression_matrix(
             Ignored when ``obsm`` is set.
 
     Returns:
-        Matrix of shape ``(n_cells, n_features)``, dense or sparse.
+        Matrix of shape ``(n_cells, n_features)``.
 
     """
     if obsm is not None:
@@ -136,7 +133,7 @@ def _get_expression_matrix(
         x = x[:, hvg_mask]  # ty: ignore[not-subscriptable]
 
     if scipy.sparse.issparse(x):
-        return x.tocsr()
+        return cast("scipy.sparse.csr_matrix", x).tocsr()
     return np.asarray(x)
 
 
@@ -177,7 +174,7 @@ def _get_labels_and_mask(
 
 
 def _compute_global(
-    x: npt.NDArray,
+    x: Matrix,
     mask: npt.NDArray,
     labels: npt.NDArray | None,
     order: float,
@@ -199,7 +196,7 @@ def _compute_global(
         empty in singleton mode.
 
     """
-    x_masked = x[mask]
+    x_masked = cast("npt.NDArray", x)[mask]
 
     if labels is None:
         return _compute_singleton_diversity(x_masked, order, alpha), {}
@@ -217,7 +214,7 @@ def _compute_global(
 
 
 def _compute_grouped_celltype(  # noqa: PLR0913
-    x: npt.NDArray,
+    x: Matrix,
     mask: npt.NDArray,
     labels: npt.NDArray,
     order: float,
@@ -228,7 +225,7 @@ def _compute_grouped_celltype(  # noqa: PLR0913
     alpha: float = 1.0,
 ) -> tuple[dict, float | None, dict]:
     """Per-group diversity in cell-type mode via Reeve partition diversity."""
-    x_masked = x[mask]
+    x_masked = cast("npt.NDArray", x)[mask]
     labels_masked = labels[mask]
     sim, cell_types = scdiv.similarity.cell_type_similarity(
         x_masked, labels_masked, alpha
@@ -273,7 +270,7 @@ def _compute_grouped_celltype(  # noqa: PLR0913
 
 
 def _compute_grouped_singleton(  # noqa: PLR0913
-    x: npt.NDArray,
+    x: Matrix,
     mask: npt.NDArray,
     order: float,
     groups: pd.Series,
@@ -283,7 +280,7 @@ def _compute_grouped_singleton(  # noqa: PLR0913
     alpha: float = 1.0,
 ) -> tuple[dict, float | None]:
     """Per-group diversity in singleton mode (each cell its own type)."""
-    x_norm = scdiv.similarity.feature_transform(x[mask], alpha)
+    x_norm = scdiv.similarity.feature_transform(cast("npt.NDArray", x)[mask], alpha)
     group_keys, group_idx = np.unique(groups[mask].to_numpy(), return_inverse=True)
     if len(group_keys) == 0:
         warnings.warn(

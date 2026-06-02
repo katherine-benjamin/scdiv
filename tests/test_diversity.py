@@ -88,6 +88,18 @@ def test_order_two(sim_and_dist):
     npt.assert_allclose(div, 1 / (dist.T @ (similarity @ dist)), rtol=RTOL)
 
 
+@pytest.mark.parametrize("order", [1 - 1e-16, 1 + 1e-16, 1 - 1e-9, 1 + 1e-9])
+def test_order_near_one_matches_limit(order):
+    # order=1 is a removable singularity; values infinitesimally off 1 must
+    # not collapse to the species count (regression for a pmean underflow).
+    similarity = np.eye(3)
+    dist = np.full(3, 1 / 3)
+    at_one = scdiv.diversity.diversity(similarity, 1.0, dist)
+    npt.assert_allclose(
+        scdiv.diversity.diversity(similarity, order, dist), at_one, rtol=RTOL
+    )
+
+
 @given(similarities_and_dists(), orders, orders)
 def test_decreasing_in_order(sim_and_dist, order1, order2):
     similarity, dist = sim_and_dist

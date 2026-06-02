@@ -1,15 +1,28 @@
 """Similarity-sensitive diversity measures for transcriptomics data."""
 
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 import numpy.typing as npt
 import scipy.stats
 
 import scdiv.similarity
+from scdiv._types import Matrix
 
 Mode = Literal["alpha", "alpha_norm", "gamma"]
 _MODES: tuple[Mode, ...] = ("alpha", "alpha_norm", "gamma")
+
+_ORDER_ONE_TOL = 1e-8
+
+
+def _snap_order(order: float) -> float:
+    """Snap orders within ``_ORDER_ONE_TOL`` of 1 to exactly 1.
+
+    Order 1 is a removable singularity (the geometric-mean limit); the power
+    mean underflows just below it and collapses to 1. Snapping to the exact
+    limit removes the discontinuity.
+    """
+    return 1.0 if abs(order - 1.0) < _ORDER_ONE_TOL else order
 
 
 def diversity_from_weighted_similarities(
@@ -32,10 +45,9 @@ def diversity_from_weighted_similarities(
         The diversity of the data set.
 
     """
-    # The feature matrix may be float32 (e.g. a sparse smoothed layer); the
-    # weighted-similarity vector is small, so upcast it here to keep the
-    # Hill-number reduction in float64 and avoid underflow at q != 1.
+    # float32 inputs underflow in the q != 1 reduction; this vector is small.
     weighted_similarities = np.asarray(weighted_similarities, dtype=np.float64)
+    order = _snap_order(order)
 
     if np.isposinf(order):
         return 1 / weighted_similarities.max()
@@ -102,6 +114,7 @@ def _power_mean(values: npt.NDArray, weights: npt.NDArray, order: float) -> floa
     Used to aggregate per-subcommunity diversities into a single
     metacommunity-level scalar (Reeve et al. 2016).
     """
+    order = _snap_order(order)
     if np.isposinf(order):
         return float(values.min())
     if np.isneginf(order):
@@ -185,7 +198,7 @@ def partition_diversity(  # noqa: PLR0913
 
 
 def partition_diversity_singleton(
-    x_norm: npt.NDArray,
+    x_norm: Matrix,
     group_indices: npt.NDArray,
     order: float,
     *,
@@ -231,12 +244,13 @@ def partition_diversity_singleton(
         msg = f"mode must be one of {_MODES}, got {mode!r}."
         raise ValueError(msg)
 
-    n_total = x_norm.shape[0]
+    xn = cast("npt.NDArray", x_norm)
+    n_total = xn.shape[0]
     n_groups = int(group_indices.max()) + 1
     p_pooled = np.ones(n_total) / n_total
 
     if mode == "gamma":
-        zp_pooled = scdiv.similarity.weighted_cosine_similarities(x_norm, p_pooled)
+        zp_pooled = scdiv.similarity.weighted_cosine_similarities(xn, p_pooled)
 
     per_sub = np.empty(n_groups)
     weights = np.empty(n_groups)
@@ -248,7 +262,7 @@ def partition_diversity_singleton(
         if mode == "gamma":
             zp_j = zp_pooled[within]
         else:
-            zp_j = scdiv.similarity.weighted_cosine_similarities(x_norm[within], p_j)
+            zp_j = scdiv.similarity.weighted_cosine_similarities(xn[within], p_j)
         per_sub[j] = diversity_from_weighted_similarities(zp_j, order, p_j)
 
     if mode == "gamma":
