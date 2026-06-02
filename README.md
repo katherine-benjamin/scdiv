@@ -53,7 +53,7 @@ scdiv.tl.diversity(adata, order=1)
   when `obsm` is set.
 - `alpha=1.0` (default): sensitivity of the similarity measure to
   highly expressed genes. `1.0`: most sensitive to highly expressed genes,
-  `0.0: least sensitive to highly expressed genes.
+  `0.0`: least sensitive to highly expressed genes.
 - `mode="alpha_norm"` (default), `"alpha"`, or `"gamma"`: partition
   diversity mode in the style of Reeve et al. (2016), used with `groupby`.
   `alpha_norm` is each subcommunity's standalone Leinster–Cobbold
